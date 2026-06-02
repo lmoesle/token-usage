@@ -1,5 +1,5 @@
 {
-  "name": "lmoesle/token-usage-cli",
+  "name": "@lmoesle/token-usage-cli",
   "version": "0.1.0",
   "description": "CLI for tracking AI agent token usage",
   "main": "index.js",
