@@ -1,6 +1,6 @@
 {
   "name": "@lmoesle/token-usage-cli",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "CLI for tracking AI agent token usage",
   "main": "index.js",
   "bin": {
