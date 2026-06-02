@@ -1,6 +1,6 @@
 const path = require('node:path');
 const webpack = require('webpack');
-const CopyPlugin = require('copy-webpack-plugin');
+const packageJson = require('./package.json');
 
 module.exports = {
     target: 'node',
@@ -10,6 +10,7 @@ module.exports = {
         path: path.resolve(__dirname, 'dist'),
         filename: 'index.js',
         libraryTarget: 'commonjs2',
+        clean: true,
     },
     resolve: {
         extensions: ['.ts', '.js'],
@@ -24,15 +25,12 @@ module.exports = {
         ],
     },
     plugins: [
+        new webpack.DefinePlugin({
+            TOKEN_USAGE_CLI_VERSION: JSON.stringify(packageJson.version),
+        }),
         new webpack.BannerPlugin({
             banner: '#!/usr/bin/env node',
             raw: true,
-        }),
-        new CopyPlugin({
-            patterns: [
-                { from: 'package.json', to: '' },
-                { from: 'README.md', to: '' },
-            ],
         }),
     ],
 };

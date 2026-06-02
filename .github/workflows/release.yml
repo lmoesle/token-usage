@@ -10,7 +10,9 @@ permissions:
 
 jobs:
   release:
-    permissions: write-all
+    permissions:
+      id-token: write
+      contents: write
     runs-on: ubuntu-latest
     steps:
       - name: Checkout sources
@@ -37,7 +39,6 @@ jobs:
 
       # nodejs-release
       - name: Publish
-        working-directory: dist
         run: npm publish --access public
 
       # github release

@@ -6,6 +6,12 @@ import { JsonTokenUsagePresenter } from '../out/jsonTokenUsagePresenter';
 import { LoadTokenPricesOutPort, LoadTokenUsageOutPort } from '../../application/ports/out/tokenUsageOutPort';
 import { TokenPriceConfigAdapter } from '../out/tokenPriceConfigAdapter';
 
+declare const TOKEN_USAGE_CLI_VERSION: string | undefined;
+
+const cliVersion = typeof TOKEN_USAGE_CLI_VERSION === 'string'
+    ? TOKEN_USAGE_CLI_VERSION
+    : process.env.npm_package_version ?? '0.2.0';
+
 interface TokenUsageCliOptions {
     raw?: boolean;
     opencodeDb?: string;
@@ -25,7 +31,7 @@ export function createTokenUsageCli(dependencies: TokenUsageCliDependencies = {}
     program
         .name('token-usage')
         .description('Track AI token usage across supported agents')
-        .version('0.1.0')
+        .version(cliVersion)
         .argument('<time-period>', 'time period to view: today, daily, weekly, monthly or yearly')
         .option('--raw', 'print token usage as JSON instead of a table')
         .option('--opencode-db <path>', `path to the opencode SQLite database (default: ${DEFAULT_OPENCODE_DB_PATH})`)

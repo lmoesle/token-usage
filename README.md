@@ -15,11 +15,11 @@ This setup provides:
 The CLI reads Opencode usage from `~/.local/share/opencode/opencode.db` by default.
 
 ```bash
-lmoesle/token-usage-cli today
-lmoesle/token-usage-cli daily
-lmoesle/token-usage-cli weekly
-lmoesle/token-usage-cli monthly
-lmoesle/token-usage-cli yearly
+npx @lmoesle/token-usage-cli today
+npx @lmoesle/token-usage-cli daily
+npx @lmoesle/token-usage-cli weekly
+npx @lmoesle/token-usage-cli monthly
+npx @lmoesle/token-usage-cli yearly
 ```
 
 `today` shows only today's usage. `daily`, `weekly`, `monthly`, and `yearly` load the complete usage history and group it by the selected period.
@@ -31,15 +31,15 @@ The CLI calculates costs from the model token prices in `src/adapter/out/tokenPr
 Use `--raw` to print the token usage report as JSON:
 
 ```bash
-lmoesle/token-usage-cli monthly --raw
+npx @lmoesle/token-usage-cli monthly --raw
 ```
 
-**Custom Opencode Database****
+## Custom Opencode Database
 
 Use `--opencode-db` to read another SQLite database, for example the sample database in this repository:
 
 ```bash
-lmoesle/token-usage-cli daily --opencode-db sample-data/opencode.db
+npx @lmoesle/token-usage-cli daily --opencode-db sample-data/opencode.db
 ```
 
 ## Setup
