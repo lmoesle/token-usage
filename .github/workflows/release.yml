@@ -39,6 +39,8 @@ jobs:
       - name: Publish
         working-directory: dist
         run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_PUBLISH_SECRET }}
 
       # github release
       - name: Create tag
