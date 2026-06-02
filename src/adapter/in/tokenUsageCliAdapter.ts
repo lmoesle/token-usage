@@ -3,7 +3,8 @@ import { TokenUsageUseCase } from '../../application/usecases/tokenUsageUseCase'
 import { ConsoleTokenUsagePresenter } from '../out/consoleTokenUsagePresenter';
 import { DEFAULT_OPENCODE_DB_PATH, OpencodeTokenUsageAdapter } from '../out/opencodeTokenUsageAdapter';
 import { JsonTokenUsagePresenter } from '../out/jsonTokenUsagePresenter';
-import { LoadTokenUsageOutPort } from '../../application/ports/out/tokenUsageOutPort';
+import { LoadTokenPricesOutPort, LoadTokenUsageOutPort } from '../../application/ports/out/tokenUsageOutPort';
+import { TokenPriceConfigAdapter } from '../out/tokenPriceConfigAdapter';
 
 interface TokenUsageCliOptions {
     raw?: boolean;
@@ -14,6 +15,7 @@ export interface TokenUsageCliDependencies {
     now?: () => Date;
     writeLine?: (line: string) => void;
     loadTokenUsageOutPort?: LoadTokenUsageOutPort;
+    loadTokenPricesOutPort?: LoadTokenPricesOutPort;
 }
 
 export function createTokenUsageCli(dependencies: TokenUsageCliDependencies = {}): Command {
@@ -30,10 +32,11 @@ export function createTokenUsageCli(dependencies: TokenUsageCliDependencies = {}
         .action(async (timePeriod: string, options: TokenUsageCliOptions) => {
             const loadTokenUsageOutPort = dependencies.loadTokenUsageOutPort
                 ?? new OpencodeTokenUsageAdapter(options.opencodeDb ?? DEFAULT_OPENCODE_DB_PATH);
+            const loadTokenPricesOutPort = dependencies.loadTokenPricesOutPort ?? new TokenPriceConfigAdapter();
             const showTokenUsageOutPort = options.raw
                 ? new JsonTokenUsagePresenter(writeLine)
                 : new ConsoleTokenUsagePresenter(writeLine);
-            const viewTokenUsageInPort = new TokenUsageUseCase(loadTokenUsageOutPort, showTokenUsageOutPort, dependencies.now);
+            const viewTokenUsageInPort = new TokenUsageUseCase(loadTokenUsageOutPort, loadTokenPricesOutPort, showTokenUsageOutPort, dependencies.now);
 
             await viewTokenUsageInPort.viewTokenUsage({ timePeriod });
         });

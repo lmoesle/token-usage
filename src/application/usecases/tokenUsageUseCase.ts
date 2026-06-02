@@ -1,10 +1,11 @@
 import { ViewTokenUsageCommand, ViewTokenUsageInPort } from '../ports/in/tokenUsageInPort';
-import { LoadTokenUsageOutPort, ShowTokenUsageOutPort } from '../ports/out/tokenUsageOutPort';
+import { LoadTokenPricesOutPort, LoadTokenUsageOutPort, ShowTokenUsageOutPort } from '../ports/out/tokenUsageOutPort';
 import { createTimeRange, createTokenUsageReport, parseTimePeriod } from '../../domain/tokenUsage';
 
 export class TokenUsageUseCase implements ViewTokenUsageInPort {
     constructor(
         private loadTokenUsageOutPort: LoadTokenUsageOutPort,
+        private loadTokenPricesOutPort: LoadTokenPricesOutPort,
         private showTokenUsageOutPort: ShowTokenUsageOutPort,
         private now: () => Date = () => new Date()
     ) {}
@@ -13,7 +14,8 @@ export class TokenUsageUseCase implements ViewTokenUsageInPort {
         const period = parseTimePeriod(command.timePeriod);
         const range = createTimeRange(period, this.now());
         const measurements = await this.loadTokenUsageOutPort.loadTokenUsage(range);
-        const report = createTokenUsageReport(period, measurements, range);
+        const tokenPrices = await this.loadTokenPricesOutPort.loadTokenPrices();
+        const report = createTokenUsageReport(period, measurements, range, tokenPrices);
 
         this.showTokenUsageOutPort.showTokenUsage(report);
     }

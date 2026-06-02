@@ -16,6 +16,14 @@ export interface TokenUsageMeasurement {
     cachedTokens: number;
 }
 
+export interface TokenPrice {
+    input: number;
+    cached: number;
+    output: number;
+}
+
+export type TokenPrices = Record<string, TokenPrice>;
+
 export interface TokenUsageEntry extends TokenUsageMeasurement {
     totalTokens: number;
     cost: number;
@@ -55,7 +63,14 @@ export function createTimeRange(period: TimePeriod, now: Date = new Date()): Tim
     return { start, endExclusive: addDays(start, 1) };
 }
 
-export function createTokenUsageReport(period: TimePeriod, measurements: TokenUsageMeasurement[], range?: TimeRange): TokenUsageReport {
+const TOKENS_PER_PRICE_UNIT = 1_000_000;
+
+export function createTokenUsageReport(
+    period: TimePeriod,
+    measurements: TokenUsageMeasurement[],
+    range?: TimeRange,
+    tokenPrices: TokenPrices = {}
+): TokenUsageReport {
     const entriesByKey = new Map<string, TokenUsageMeasurement>();
 
     for (const measurement of measurements) {
@@ -80,7 +95,7 @@ export function createTokenUsageReport(period: TimePeriod, measurements: TokenUs
         .map((measurement) => ({
             ...measurement,
             totalTokens: measurement.inputTokens + measurement.outputTokens + measurement.cachedTokens,
-            cost: 0
+            cost: calculateCost(measurement, tokenPrices[measurement.model])
         }))
         .sort((a, b) => {
             const dateCompare = a.date.localeCompare(b.date);
@@ -123,6 +138,18 @@ function calculateTotals(entries: TokenUsageEntry[]): TokenUsageTotals {
         totalTokens: 0,
         cost: 0
     });
+}
+
+function calculateCost(measurement: TokenUsageMeasurement, tokenPrice: TokenPrice | undefined): number {
+    if (tokenPrice === undefined) {
+        return 0;
+    }
+
+    return (
+        measurement.inputTokens * tokenPrice.input
+        + measurement.cachedTokens * tokenPrice.cached
+        + measurement.outputTokens * tokenPrice.output
+    ) / TOKENS_PER_PRICE_UNIT;
 }
 
 function createGroupKey(period: TimePeriod, dateKey: string): string {

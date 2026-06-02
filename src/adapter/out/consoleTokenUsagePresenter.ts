@@ -70,7 +70,7 @@ function formatNumber(value: number): string {
 }
 
 function formatCost(value: number): string {
-    return value.toFixed(2);
+    return `$${value.toFixed(2)}`;
 }
 
 function pad(value: string, width: number, align: 'left' | 'right'): string {

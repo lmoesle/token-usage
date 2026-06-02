@@ -69,9 +69,9 @@ export class OpencodeTokenUsageAdapter implements LoadTokenUsageOutPort {
 
     private mapRow(row: OpencodeSessionRow): TokenUsageMeasurement[] {
         const model = this.mapModel(row.model);
-        const inputTokens = toTokenCount(row.tokens_input);
+        const inputTokens = toTokenCount(row.tokens_input) + toTokenCount(row.tokens_cache_write);
         const outputTokens = toTokenCount(row.tokens_output);
-        const cachedTokens = toTokenCount(row.tokens_cache_read) + toTokenCount(row.tokens_cache_write);
+        const cachedTokens = toTokenCount(row.tokens_cache_read);
 
         if (model === undefined || inputTokens + outputTokens + cachedTokens === 0) {
             return [];

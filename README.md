@@ -5,6 +5,7 @@ token-usage is a TypeScript CLI for tracking and visualizing AI agent token usag
 This setup provides:
 - A Commander-based CLI entrypoint (`token-usage`).
 - Token usage aggregation by date, agent, and model.
+- Cost calculation from configured model token prices.
 - Opencode usage extraction from the local SQLite database.
 - Table output and raw JSON output.
 - TypeScript build with `webpack`.
@@ -49,7 +50,11 @@ token-usage yearly
 
 `today` shows only today's usage. `daily`, `weekly`, `monthly`, and `yearly` load the complete usage history and group it by the selected period.
 
-The table groups usage by `Period`, `Agent`, and `Model`. Daily periods use `YYYY-MM-DD`, weekly periods use the Monday date of the week, monthly periods use `YYYY-MM`, and yearly periods use `YYYY`. Each row shows input, output, cached, total tokens, and cost. Costs are currently always `0`.
+The table groups usage by `Period`, `Agent`, and `Model`. Daily periods use `YYYY-MM-DD`, weekly periods use the Monday date of the week, monthly periods use `YYYY-MM`, and yearly periods use `YYYY`. Each row shows input, output, cached, total tokens, and cost.
+
+### Costs
+
+The CLI calculates costs from the model token prices in `src/adapter/out/tokenPrices.json`. Prices are configured in USD per 1 million tokens and split into `input`, `cached`, and `output` prices. Models without a configured price use `0` cost.
 
 ### Raw JSON
 

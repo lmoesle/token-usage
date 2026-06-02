@@ -1,8 +1,9 @@
 import { DatabaseSync } from 'node:sqlite';
 import { createTokenUsageCli, TokenUsageUseCase } from '../src/index';
-import { LoadTokenUsageOutPort, ShowTokenUsageOutPort } from '../src/application/ports/out/tokenUsageOutPort';
-import { createTimeRange, createTokenUsageReport, parseTimePeriod, TimeRange, TokenUsageMeasurement, TokenUsageReport } from '../src/domain/tokenUsage';
+import { LoadTokenPricesOutPort, LoadTokenUsageOutPort, ShowTokenUsageOutPort } from '../src/application/ports/out/tokenUsageOutPort';
+import { createTimeRange, createTokenUsageReport, parseTimePeriod, TimeRange, TokenPrices, TokenUsageMeasurement, TokenUsageReport } from '../src/domain/tokenUsage';
 import { OpencodeTokenUsageAdapter } from '../src/adapter/out/opencodeTokenUsageAdapter';
+import { TokenPriceConfigAdapter } from '../src/adapter/out/tokenPriceConfigAdapter';
 
 describe('token usage domain', () => {
     test('creates a local time range for today only', () => {
@@ -42,6 +43,21 @@ describe('token usage domain', () => {
         });
     });
 
+    test('calculates costs from model token prices', () => {
+        const report = createTokenUsageReport('daily', [
+            { date: '2026-05-26', agent: 'opencode', model: 'gpt-5.5', inputTokens: 1_000_000, outputTokens: 1_000_000, cachedTokens: 1_000_000 },
+            { date: '2026-05-26', agent: 'opencode', model: 'unknown-model', inputTokens: 1_000_000, outputTokens: 1_000_000, cachedTokens: 1_000_000 }
+        ], undefined, {
+            'gpt-5.5': { input: 5, cached: 0.5, output: 30 }
+        });
+
+        expect(report.entries).toEqual([
+            { date: '2026-05-26', agent: 'opencode', model: 'gpt-5.5', inputTokens: 1_000_000, outputTokens: 1_000_000, cachedTokens: 1_000_000, totalTokens: 3_000_000, cost: 35.5 },
+            { date: '2026-05-26', agent: 'opencode', model: 'unknown-model', inputTokens: 1_000_000, outputTokens: 1_000_000, cachedTokens: 1_000_000, totalTokens: 3_000_000, cost: 0 }
+        ]);
+        expect(report.total.cost).toBe(35.5);
+    });
+
     test('groups all-time usage by the selected period', () => {
         const measurements: TokenUsageMeasurement[] = [
             { date: '2026-05-31', agent: 'opencode', model: 'gpt-5.5', inputTokens: 10, outputTokens: 1, cachedTokens: 0 },
@@ -71,8 +87,11 @@ describe('token usage use case', () => {
         const loader = new FakeTokenUsageLoader([
             { date: '2026-05-26', agent: 'build', model: 'gpt-5.5', inputTokens: 10, outputTokens: 1, cachedTokens: 2 }
         ]);
+        const priceLoader = new FakeTokenPricesLoader({
+            'gpt-5.5': { input: 5, cached: 0.5, output: 30 }
+        });
         const presenter = new CapturingPresenter();
-        const useCase = new TokenUsageUseCase(loader, presenter, () => new Date(2026, 4, 26, 12, 0, 0, 0));
+        const useCase = new TokenUsageUseCase(loader, priceLoader, presenter, () => new Date(2026, 4, 26, 12, 0, 0, 0));
 
         await useCase.viewTokenUsage({ timePeriod: 'today' });
 
@@ -81,8 +100,9 @@ describe('token usage use case', () => {
             endExclusive: new Date(2026, 4, 27, 0, 0, 0, 0)
         });
         expect(presenter.report?.entries).toEqual([
-            { date: '2026-05-26', agent: 'build', model: 'gpt-5.5', inputTokens: 10, outputTokens: 1, cachedTokens: 2, totalTokens: 13, cost: 0 }
+            { date: '2026-05-26', agent: 'build', model: 'gpt-5.5', inputTokens: 10, outputTokens: 1, cachedTokens: 2, totalTokens: 13, cost: expect.any(Number) }
         ]);
+        expect(presenter.report?.entries[0].cost).toBeCloseTo(0.000081);
     });
 
     test('loads all measurements for daily grouping', async () => {
@@ -90,12 +110,22 @@ describe('token usage use case', () => {
             { date: '2026-05-26', agent: 'build', model: 'gpt-5.5', inputTokens: 10, outputTokens: 1, cachedTokens: 2 }
         ]);
         const presenter = new CapturingPresenter();
-        const useCase = new TokenUsageUseCase(loader, presenter, () => new Date(2026, 4, 26, 12, 0, 0, 0));
+        const useCase = new TokenUsageUseCase(loader, new FakeTokenPricesLoader({}), presenter, () => new Date(2026, 4, 26, 12, 0, 0, 0));
 
         await useCase.viewTokenUsage({ timePeriod: 'daily' });
 
         expect(loader.loadedRange).toBeUndefined();
         expect(presenter.report?.period).toBe('daily');
+    });
+});
+
+describe('token price config adapter', () => {
+    test('loads configured model token prices', async () => {
+        const prices = await new TokenPriceConfigAdapter().loadTokenPrices();
+
+        expect(prices['gpt-5.5']).toEqual({ input: 5, cached: 0.5, output: 30 });
+        expect(prices['devstral-medium-latest']).toEqual({ input: 0.4, cached: 0, output: 2 });
+        expect(prices['open-mixtral-8x22b']).toEqual({ input: 2, cached: 0, output: 6 });
     });
 });
 
@@ -116,9 +146,9 @@ describe('opencode token usage adapter', () => {
                 date: '2026-06-02',
                 agent: 'opencode',
                 model: 'gpt-5.5',
-                inputTokens: 15,
+                inputTokens: 25,
                 outputTokens: 3,
-                cachedTokens: 13,
+                cachedTokens: 3,
                 totalTokens: 31,
                 cost: 0
             }
@@ -136,9 +166,9 @@ describe('opencode token usage adapter', () => {
                 date: '2026-06-01',
                 agent: 'opencode',
                 model: 'plain-model',
-                inputTokens: 100,
+                inputTokens: 101,
                 outputTokens: 10,
-                cachedTokens: 2,
+                cachedTokens: 1,
                 totalTokens: 112,
                 cost: 0
             },
@@ -146,9 +176,9 @@ describe('opencode token usage adapter', () => {
                 date: '2026-06-02',
                 agent: 'opencode',
                 model: 'gpt-5.5',
-                inputTokens: 15,
+                inputTokens: 25,
                 outputTokens: 3,
-                cachedTokens: 13,
+                cachedTokens: 3,
                 totalTokens: 31,
                 cost: 0
             }
@@ -165,7 +195,8 @@ describe('token usage cli', () => {
         const program = createTokenUsageCli({
             now: () => new Date(2026, 4, 26, 12, 0, 0, 0),
             writeLine: (line) => output.push(line),
-            loadTokenUsageOutPort: loader
+            loadTokenUsageOutPort: loader,
+            loadTokenPricesOutPort: new FakeTokenPricesLoader({})
         });
 
         await program.parseAsync(['today', '--raw'], { from: 'user' });
@@ -196,6 +227,14 @@ class CapturingPresenter implements ShowTokenUsageOutPort {
 
     showTokenUsage(report: TokenUsageReport): void {
         this.report = report;
+    }
+}
+
+class FakeTokenPricesLoader implements LoadTokenPricesOutPort {
+    constructor(private tokenPrices: TokenPrices) {}
+
+    async loadTokenPrices(): Promise<TokenPrices> {
+        return this.tokenPrices;
     }
 }
 
