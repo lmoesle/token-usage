@@ -3,6 +3,7 @@ import { TokenUsageUseCase } from '../../application/usecases/tokenUsageUseCase'
 import { ConsoleTokenUsagePresenter } from '../out/consoleTokenUsagePresenter';
 import { DEFAULT_OPENCODE_DB_PATH, OpencodeTokenUsageAdapter } from '../out/opencodeTokenUsageAdapter';
 import { JsonTokenUsagePresenter } from '../out/jsonTokenUsagePresenter';
+import { LoadTokenUsageOutPort } from '../../application/ports/out/tokenUsageOutPort';
 
 interface TokenUsageCliOptions {
     raw?: boolean;
@@ -12,6 +13,7 @@ interface TokenUsageCliOptions {
 export interface TokenUsageCliDependencies {
     now?: () => Date;
     writeLine?: (line: string) => void;
+    loadTokenUsageOutPort?: LoadTokenUsageOutPort;
 }
 
 export function createTokenUsageCli(dependencies: TokenUsageCliDependencies = {}): Command {
@@ -26,7 +28,8 @@ export function createTokenUsageCli(dependencies: TokenUsageCliDependencies = {}
         .option('--raw', 'print token usage as JSON instead of a table')
         .option('--opencode-db <path>', `path to the opencode SQLite database (default: ${DEFAULT_OPENCODE_DB_PATH})`)
         .action(async (timePeriod: string, options: TokenUsageCliOptions) => {
-            const loadTokenUsageOutPort = new OpencodeTokenUsageAdapter(options.opencodeDb ?? DEFAULT_OPENCODE_DB_PATH);
+            const loadTokenUsageOutPort = dependencies.loadTokenUsageOutPort
+                ?? new OpencodeTokenUsageAdapter(options.opencodeDb ?? DEFAULT_OPENCODE_DB_PATH);
             const showTokenUsageOutPort = options.raw
                 ? new JsonTokenUsagePresenter(writeLine)
                 : new ConsoleTokenUsagePresenter(writeLine);

@@ -1,4 +1,4 @@
-import path from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { createTokenUsageCli, TokenUsageUseCase } from '../src/index';
 import { LoadTokenUsageOutPort, ShowTokenUsageOutPort } from '../src/application/ports/out/tokenUsageOutPort';
 import { createTimeRange, createTokenUsageReport, parseTimePeriod, TimeRange, TokenUsageMeasurement, TokenUsageReport } from '../src/domain/tokenUsage';
@@ -100,27 +100,56 @@ describe('token usage use case', () => {
 });
 
 describe('opencode token usage adapter', () => {
-    test('loads token usage from the sample sqlite database', async () => {
-        const adapter = new OpencodeTokenUsageAdapter(sampleDatabasePath());
+    test('loads token usage from the opencode sqlite database', async () => {
+        const adapter = new OpencodeTokenUsageAdapter(':memory:', () => createOpencodeFixtureDatabase());
         const range = {
-            start: new Date('2026-06-02T00:00:00.000Z'),
-            endExclusive: new Date('2026-06-03T00:00:00.000Z')
+            start: new Date(2026, 5, 2, 0, 0, 0, 0),
+            endExclusive: new Date(2026, 5, 3, 0, 0, 0, 0)
         };
 
         const measurements = await adapter.loadTokenUsage(range);
         const report = createTokenUsageReport('today', measurements, range);
 
-        expect(measurements.length).toBeGreaterThan(0);
         expect(measurements.every((measurement) => measurement.inputTokens + measurement.outputTokens + measurement.cachedTokens > 0)).toBe(true);
         expect(report.entries).toEqual([
             {
                 date: '2026-06-02',
                 agent: 'opencode',
                 model: 'gpt-5.5',
-                inputTokens: 838464,
-                outputTokens: 34435,
-                cachedTokens: 17459200,
-                totalTokens: 18332099,
+                inputTokens: 15,
+                outputTokens: 3,
+                cachedTokens: 13,
+                totalTokens: 31,
+                cost: 0
+            }
+        ]);
+    });
+
+    test('loads the complete opencode sqlite history without a time range', async () => {
+        const adapter = new OpencodeTokenUsageAdapter(':memory:', () => createOpencodeFixtureDatabase());
+
+        const measurements = await adapter.loadTokenUsage();
+        const report = createTokenUsageReport('daily', measurements);
+
+        expect(report.entries).toEqual([
+            {
+                date: '2026-06-01',
+                agent: 'opencode',
+                model: 'plain-model',
+                inputTokens: 100,
+                outputTokens: 10,
+                cachedTokens: 2,
+                totalTokens: 112,
+                cost: 0
+            },
+            {
+                date: '2026-06-02',
+                agent: 'opencode',
+                model: 'gpt-5.5',
+                inputTokens: 15,
+                outputTokens: 3,
+                cachedTokens: 13,
+                totalTokens: 31,
                 cost: 0
             }
         ]);
@@ -130,19 +159,24 @@ describe('opencode token usage adapter', () => {
 describe('token usage cli', () => {
     test('prints raw token usage as json', async () => {
         const output: string[] = [];
+        const loader = new FakeTokenUsageLoader([
+            { date: '2026-05-26', agent: 'opencode', model: 'gpt-5.5', inputTokens: 10, outputTokens: 2, cachedTokens: 3 }
+        ]);
         const program = createTokenUsageCli({
             now: () => new Date(2026, 4, 26, 12, 0, 0, 0),
-            writeLine: (line) => output.push(line)
+            writeLine: (line) => output.push(line),
+            loadTokenUsageOutPort: loader
         });
 
-        await program.parseAsync(['today', '--raw', '--opencode-db', sampleDatabasePath()], { from: 'user' });
+        await program.parseAsync(['today', '--raw'], { from: 'user' });
 
         const report = JSON.parse(output[0]) as TokenUsageReport;
         expect(report.period).toBe('today');
         expect(report.startDate).toBe('2026-05-26');
         expect(report.endDate).toBe('2026-05-26');
-        expect(report.entries.length).toBeGreaterThan(0);
-        expect(report.total.cost).toBe(0);
+        expect(report.entries).toEqual([
+            { date: '2026-05-26', agent: 'opencode', model: 'gpt-5.5', inputTokens: 10, outputTokens: 2, cachedTokens: 3, totalTokens: 15, cost: 0 }
+        ]);
     });
 });
 
@@ -165,6 +199,62 @@ class CapturingPresenter implements ShowTokenUsageOutPort {
     }
 }
 
-function sampleDatabasePath(): string {
-    return path.resolve(__dirname, '../sample-data/opencode.db');
+interface OpencodeFixtureRow {
+    timeCreated: number;
+    model: string | null;
+    inputTokens: number;
+    outputTokens: number;
+    cacheReadTokens: number;
+    cacheWriteTokens: number;
+}
+
+function createOpencodeFixtureDatabase(): DatabaseSync {
+    const database = new DatabaseSync(':memory:');
+    database.exec(`
+        CREATE TABLE session (
+            time_created INTEGER NOT NULL,
+            model TEXT,
+            tokens_input INTEGER NOT NULL,
+            tokens_output INTEGER NOT NULL,
+            tokens_cache_read INTEGER NOT NULL,
+            tokens_cache_write INTEGER NOT NULL
+        )
+    `);
+
+    const rows: OpencodeFixtureRow[] = [
+        createOpencodeFixtureRow({ day: 1, model: 'plain-model', inputTokens: 100, outputTokens: 10, cacheReadTokens: 1, cacheWriteTokens: 1 }),
+        createOpencodeFixtureRow({ day: 2, model: JSON.stringify({ id: 'gpt-5.5' }), inputTokens: 10, outputTokens: 2, cacheReadTokens: 3, cacheWriteTokens: 4 }),
+        createOpencodeFixtureRow({ day: 2, model: 'gpt-5.5', inputTokens: 5, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 6 }),
+        createOpencodeFixtureRow({ day: 2, model: '', inputTokens: 999, outputTokens: 999, cacheReadTokens: 999, cacheWriteTokens: 999 }),
+        createOpencodeFixtureRow({ day: 2, model: null, inputTokens: 999, outputTokens: 999, cacheReadTokens: 999, cacheWriteTokens: 999 }),
+        createOpencodeFixtureRow({ day: 2, model: 'zero-model', inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 })
+    ];
+
+    const insert = database.prepare(`
+        INSERT INTO session (
+            time_created,
+            model,
+            tokens_input,
+            tokens_output,
+            tokens_cache_read,
+            tokens_cache_write
+        ) VALUES (?, ?, ?, ?, ?, ?)
+    `);
+
+    for (const row of rows) {
+        insert.run(row.timeCreated, row.model, row.inputTokens, row.outputTokens, row.cacheReadTokens, row.cacheWriteTokens);
+    }
+
+    return database;
+}
+
+function createOpencodeFixtureRow(row: Omit<OpencodeFixtureRow, 'timeCreated'> & { day: number }): OpencodeFixtureRow {
+    return {
+        timeCreated: new Date(2026, 5, row.day, 12, 0, 0, 0).getTime(),
+        model: row.model,
+        inputTokens: row.inputTokens,
+        outputTokens: row.outputTokens,
+        cacheReadTokens: row.cacheReadTokens,
+        cacheWriteTokens: row.cacheWriteTokens
+    };
 }

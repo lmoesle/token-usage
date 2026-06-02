@@ -6,6 +6,7 @@ import { TimeRange, TokenUsageMeasurement, toDateKey } from '../../domain/tokenU
 
 export const DEFAULT_OPENCODE_DB_PATH = '~/.local/share/opencode/opencode.db';
 const OPENCODE_AGENT = 'opencode';
+type OpenDatabase = (dbPath: string) => DatabaseSync;
 
 interface OpencodeSessionRow {
     time_created: number;
@@ -17,14 +18,17 @@ interface OpencodeSessionRow {
 }
 
 export class OpencodeTokenUsageAdapter implements LoadTokenUsageOutPort {
-    constructor(private dbPath: string = DEFAULT_OPENCODE_DB_PATH) {}
+    constructor(
+        private dbPath: string = DEFAULT_OPENCODE_DB_PATH,
+        private openDatabase: OpenDatabase = (dbPath) => new DatabaseSync(dbPath, { readOnly: true })
+    ) {}
 
     async loadTokenUsage(range?: TimeRange): Promise<TokenUsageMeasurement[]> {
         const resolvedDbPath = expandHome(this.dbPath);
         let database: DatabaseSync | undefined;
 
         try {
-            database = new DatabaseSync(resolvedDbPath, { readOnly: true });
+            database = this.openDatabase(resolvedDbPath);
             const statement = database.prepare(this.createQuery(range));
 
             const rows = range === undefined
