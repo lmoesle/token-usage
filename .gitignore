@@ -44,3 +44,6 @@ build/
 .eslintcache
 .node_repl_history
 .npmrc
+
+# samples
+sample-data

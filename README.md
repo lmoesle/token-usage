@@ -1,14 +1,19 @@
 # token-usage
 
-token-usage is a small TypeScript CLI scaffold for tracking AI agent token usage.
+token-usage is a TypeScript CLI for tracking and visualizing AI agent token usage.
 
-This initial setup provides:
-- A minimal Commander-based CLI entrypoint (`token-usage`).
+This setup provides:
+- A Commander-based CLI entrypoint (`token-usage`).
+- Token usage aggregation by date, agent, and model.
+- Opencode usage extraction from the local SQLite database.
+- Table output and raw JSON output.
 - TypeScript build with `webpack`.
 - npm scripts for build/lint/test.
 - GitHub Actions workflow for CI.
 
 ## Setup
+
+Use a Node.js runtime with `node:sqlite` support.
 
 ```bash
 npm install
@@ -25,10 +30,42 @@ The bundled CLI is emitted to `dist/index.js`.
 ## Run
 
 ```bash
-npm start
+npm start -- today
 ```
 
-prints a hello-world message.
+The CLI reads Opencode usage from `~/.local/share/opencode/opencode.db` by default.
+
+### Time Periods
+
+Run one of the supported time periods:
+
+```bash
+token-usage today
+token-usage daily
+token-usage weekly
+token-usage monthly
+token-usage yearly
+```
+
+`today` shows only today's usage. `daily`, `weekly`, `monthly`, and `yearly` load the complete usage history and group it by the selected period.
+
+The table groups usage by `Period`, `Agent`, and `Model`. Daily periods use `YYYY-MM-DD`, weekly periods use the Monday date of the week, monthly periods use `YYYY-MM`, and yearly periods use `YYYY`. Each row shows input, output, cached, total tokens, and cost. Costs are currently always `0`.
+
+### Raw JSON
+
+Use `--raw` to print the token usage report as JSON:
+
+```bash
+token-usage monthly --raw
+```
+
+### Custom Opencode Database
+
+Use `--opencode-db` to read another SQLite database, for example the sample database in this repository:
+
+```bash
+token-usage daily --opencode-db sample-data/opencode.db
+```
 
 ## Development
 

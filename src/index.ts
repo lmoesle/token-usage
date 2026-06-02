@@ -1,25 +1,15 @@
-import { Command } from 'commander';
+import { runTokenUsageCli } from './adapter/in/tokenUsageCliAdapter';
 
-const GREETING = 'Hello, token-usage!';
-
-export function getGreetingMessage(): string {
-    return GREETING;
-}
-
-function createCli(): void {
-    const program = new Command();
-
-    program
-        .name('token-usage')
-        .description('Track AI token usage across sessions')
-        .version('0.1.0')
-        .action(() => {
-            console.log(getGreetingMessage());
-        });
-
-    program.parse(process.argv);
-}
+export { createTokenUsageCli, runTokenUsageCli } from './adapter/in/tokenUsageCliAdapter';
+export { TokenUsageUseCase } from './application/usecases/tokenUsageUseCase';
+export type { ViewTokenUsageInPort, ViewTokenUsageCommand } from './application/ports/in/tokenUsageInPort';
+export type { LoadTokenUsageOutPort, ShowTokenUsageOutPort } from './application/ports/out/tokenUsageOutPort';
+export type { TimePeriod, TimeRange, TokenUsageEntry, TokenUsageMeasurement, TokenUsageReport, TokenUsageTotals } from './domain/tokenUsage';
 
 if (require.main === module) {
-    createCli();
+    runTokenUsageCli().catch((err: unknown) => {
+        const error = err instanceof Error ? err : new Error(String(err));
+        console.error(error.message);
+        process.exit(1);
+    });
 }
