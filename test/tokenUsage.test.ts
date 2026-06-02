@@ -124,8 +124,22 @@ describe('token price config adapter', () => {
         const prices = await new TokenPriceConfigAdapter().loadTokenPrices();
 
         expect(prices['gpt-5.5']).toEqual({ input: 5, cached: 0.5, output: 30 });
+        expect(prices['claude-sonnet-4-5']).toEqual({ input: 3, cached: 0.3, output: 15 });
+        expect(prices['deepseek-v4-flash']).toEqual({ input: 0.14, cached: 0.03, output: 0.28 });
+        expect(prices['gemini-3-pro']).toEqual({ input: 2, cached: 0.2, output: 12 });
+        expect(prices['glm-5']).toEqual({ input: 1, cached: 0.2, output: 3.2 });
         expect(prices['devstral-medium-latest']).toEqual({ input: 0.4, cached: 0, output: 2 });
+        expect(prices['gpt-5.3-codex-spark']).toEqual({ input: 1.75, cached: 0.175, output: 14 });
+        expect(prices['kimi-k2.5']).toEqual({ input: 0.6, cached: 0.08, output: 3 });
+        expect(prices['minimax-m2.5']).toEqual({ input: 0.3, cached: 0.06, output: 1.2 });
         expect(prices['open-mixtral-8x22b']).toEqual({ input: 2, cached: 0, output: 6 });
+        expect(prices['qwen3.6-plus']).toEqual({ input: 0.5, cached: 0.05, output: 3 });
+        expect(Object.keys(prices).length).toBeGreaterThanOrEqual(160);
+        for (const price of Object.values(prices)) {
+            expect(typeof price.input).toBe('number');
+            expect(typeof price.cached).toBe('number');
+            expect(typeof price.output).toBe('number');
+        }
     });
 });
 

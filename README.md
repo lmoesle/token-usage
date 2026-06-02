@@ -54,7 +54,7 @@ The table groups usage by `Period`, `Agent`, and `Model`. Daily periods use `YYY
 
 ### Costs
 
-The CLI calculates costs from the model token prices in `src/adapter/out/tokenPrices.json`. Prices are configured in USD per 1 million tokens and split into `input`, `cached`, and `output` prices. Models without a configured price use `0` cost.
+The CLI calculates costs from the model token prices in `src/adapter/out/tokenPrices.json`. Prices are configured in USD per 1 million tokens and split into `input`, `cached`, and `output` prices. The config covers OpenCode Zen plus common OpenCode providers like OpenAI, Anthropic, Google, and Mistral. Models without a configured price use `0` cost.
 
 ### Raw JSON
 
