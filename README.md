@@ -12,6 +12,36 @@ This setup provides:
 - npm scripts for build/lint/test.
 - GitHub Actions workflow for CI.
 
+The CLI reads Opencode usage from `~/.local/share/opencode/opencode.db` by default.
+
+```bash
+lmoesle/token-usage-cli today
+lmoesle/token-usage-cli daily
+lmoesle/token-usage-cli weekly
+lmoesle/token-usage-cli monthly
+lmoesle/token-usage-cli yearly
+```
+
+`today` shows only today's usage. `daily`, `weekly`, `monthly`, and `yearly` load the complete usage history and group it by the selected period.
+
+The table groups usage by `Period`, `Agent`, and `Model`. Daily periods use `YYYY-MM-DD`, weekly periods use the Monday date of the week, monthly periods use `YYYY-MM`, and yearly periods use `YYYY`. Each row shows input, output, cached, total tokens, and cost.
+
+The CLI calculates costs from the model token prices in `src/adapter/out/tokenPrices.json`. Prices are configured in USD per 1 million tokens and split into `input`, `cached`, and `output` prices. The config covers OpenCode Zen plus common OpenCode providers like OpenAI, Anthropic, Google, and Mistral. Models without a configured price use `0` cost.
+
+Use `--raw` to print the token usage report as JSON:
+
+```bash
+lmoesle/token-usage-cli monthly --raw
+```
+
+**Custom Opencode Database****
+
+Use `--opencode-db` to read another SQLite database, for example the sample database in this repository:
+
+```bash
+lmoesle/token-usage-cli daily --opencode-db sample-data/opencode.db
+```
+
 ## Setup
 
 Use a Node.js runtime with `node:sqlite` support.
@@ -32,44 +62,6 @@ The bundled CLI is emitted to `dist/index.js`.
 
 ```bash
 npm start -- today
-```
-
-The CLI reads Opencode usage from `~/.local/share/opencode/opencode.db` by default.
-
-### Time Periods
-
-Run one of the supported time periods:
-
-```bash
-token-usage today
-token-usage daily
-token-usage weekly
-token-usage monthly
-token-usage yearly
-```
-
-`today` shows only today's usage. `daily`, `weekly`, `monthly`, and `yearly` load the complete usage history and group it by the selected period.
-
-The table groups usage by `Period`, `Agent`, and `Model`. Daily periods use `YYYY-MM-DD`, weekly periods use the Monday date of the week, monthly periods use `YYYY-MM`, and yearly periods use `YYYY`. Each row shows input, output, cached, total tokens, and cost.
-
-### Costs
-
-The CLI calculates costs from the model token prices in `src/adapter/out/tokenPrices.json`. Prices are configured in USD per 1 million tokens and split into `input`, `cached`, and `output` prices. The config covers OpenCode Zen plus common OpenCode providers like OpenAI, Anthropic, Google, and Mistral. Models without a configured price use `0` cost.
-
-### Raw JSON
-
-Use `--raw` to print the token usage report as JSON:
-
-```bash
-token-usage monthly --raw
-```
-
-### Custom Opencode Database
-
-Use `--opencode-db` to read another SQLite database, for example the sample database in this repository:
-
-```bash
-token-usage daily --opencode-db sample-data/opencode.db
 ```
 
 ## Development
