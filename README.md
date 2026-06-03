@@ -24,7 +24,7 @@ npx @lmoesle/token-usage-cli yearly
 
 `today` shows only today's usage. `daily`, `weekly`, `monthly`, and `yearly` load the complete usage history and group it by the selected period.
 
-The table groups usage by `Period`, `Agent`, and `Model`. Daily periods use `YYYY-MM-DD`, weekly periods use the Monday date of the week, monthly periods use `YYYY-MM`, and yearly periods use `YYYY`. Each row shows input, output, cached, total tokens, and cost.
+The table groups usage by `Period`, `Agent`, and `Model`. Daily periods use `YYYY-MM-DD`, weekly periods use ISO calendar weeks (`YYYY-Www`), monthly periods use `YYYY-MM`, and yearly periods use `YYYY`. Each row shows input, output, cached, total tokens, and cost.
 
 The CLI calculates costs from the model token prices in `src/adapter/out/tokenPrices.json`. Prices are configured in USD per 1 million tokens and split into `input`, `cached`, and `output` prices. The config covers OpenCode Zen plus common OpenCode providers like OpenAI, Anthropic, Google, and Mistral. Models without a configured price use `0` cost.
 

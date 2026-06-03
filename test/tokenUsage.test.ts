@@ -62,21 +62,22 @@ describe('token usage domain', () => {
         const measurements: TokenUsageMeasurement[] = [
             { date: '2026-05-31', agent: 'opencode', model: 'gpt-5.5', inputTokens: 10, outputTokens: 1, cachedTokens: 0 },
             { date: '2026-06-01', agent: 'opencode', model: 'gpt-5.5', inputTokens: 20, outputTokens: 2, cachedTokens: 0 },
+            { date: '2026-06-02', agent: 'opencode', model: 'gpt-5.5', inputTokens: 40, outputTokens: 4, cachedTokens: 0 },
             { date: '2027-01-01', agent: 'opencode', model: 'gpt-5.5', inputTokens: 30, outputTokens: 3, cachedTokens: 0 }
         ];
 
-        expect(createTokenUsageReport('weekly', measurements).entries.map((entry) => entry.date)).toEqual([
-            '2026-05-25',
-            '2026-06-01',
-            '2026-12-28'
+        expect(createTokenUsageReport('weekly', measurements).entries.map((entry) => ({ date: entry.date, totalTokens: entry.totalTokens }))).toEqual([
+            { date: '2026-W22', totalTokens: 11 },
+            { date: '2026-W23', totalTokens: 66 },
+            { date: '2026-W53', totalTokens: 33 }
         ]);
         expect(createTokenUsageReport('monthly', measurements).entries.map((entry) => ({ date: entry.date, totalTokens: entry.totalTokens }))).toEqual([
             { date: '2026-05', totalTokens: 11 },
-            { date: '2026-06', totalTokens: 22 },
+            { date: '2026-06', totalTokens: 66 },
             { date: '2027-01', totalTokens: 33 }
         ]);
         expect(createTokenUsageReport('yearly', measurements).entries.map((entry) => ({ date: entry.date, totalTokens: entry.totalTokens }))).toEqual([
-            { date: '2026', totalTokens: 33 },
+            { date: '2026', totalTokens: 77 },
             { date: '2027', totalTokens: 33 }
         ]);
     });

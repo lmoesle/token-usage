@@ -158,7 +158,7 @@ function createGroupKey(period: TimePeriod, dateKey: string): string {
         case 'daily':
             return dateKey;
         case 'weekly':
-            return toDateKey(startOfWeek(parseDateKey(dateKey)));
+            return toIsoWeekKey(parseDateKey(dateKey));
         case 'monthly':
             return dateKey.slice(0, 7);
         case 'yearly':
@@ -194,10 +194,16 @@ function parseDateKey(dateKey: string): Date {
     return new Date(year, month - 1, day);
 }
 
-function startOfWeek(date: Date): Date {
-    const start = startOfDay(date);
-    const mondayOffset = (start.getDay() + 6) % 7;
-    return addDays(start, -mondayOffset);
+function toIsoWeekKey(date: Date): string {
+    const utcDate = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+    const isoDay = utcDate.getUTCDay() || 7;
+    utcDate.setUTCDate(utcDate.getUTCDate() + 4 - isoDay);
+
+    const isoYear = utcDate.getUTCFullYear();
+    const yearStart = new Date(Date.UTC(isoYear, 0, 1));
+    const isoWeek = Math.ceil((((utcDate.getTime() - yearStart.getTime()) / 86_400_000) + 1) / 7);
+
+    return `${isoYear}-W${padDatePart(isoWeek)}`;
 }
 
 function addDays(date: Date, days: number): Date {
