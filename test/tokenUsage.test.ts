@@ -9,6 +9,7 @@ import { OpencodeTokenUsageAdapter } from '../src/adapter/out/opencodeTokenUsage
 import { TokenPriceConfigAdapter } from '../src/adapter/out/tokenPriceConfigAdapter';
 import { CodingAgentTokenUsageAdapter, CodingAgentUsageHandler } from '../src/adapter/out/codingAgentTokenUsageAdapter';
 import { VibeTokenUsageAdapter } from '../src/adapter/out/vibeTokenUsageAdapter';
+import { CodexTokenUsageAdapter } from '../src/adapter/out/codexTokenUsageAdapter';
 
 describe('token usage domain', () => {
     test('creates a local time range for today only', () => {
@@ -268,6 +269,88 @@ describe('vibe token usage adapter', () => {
     });
 });
 
+describe('codex token usage adapter', () => {
+    test('loads token usage from current and archived codex transcripts', async () => {
+        await withTempDirectory(async (codexHomeDir) => {
+            await createCodexTranscript(codexHomeDir, ['sessions', '2026', '06', '02', 'session-a.jsonl'], [
+                createCodexSessionMeta('session-a', '2026-06-02T08:00:00.000Z'),
+                createCodexTurnContext('2026-06-02T08:00:01.000Z', 'gpt-5.5'),
+                createCodexTokenCount('2026-06-02T08:01:00.000Z', { inputTokens: 100, cachedInputTokens: 40, outputTokens: 10 }),
+                createCodexTokenCount('2026-06-02T08:02:00.000Z', { inputTokens: 100, cachedInputTokens: 40, outputTokens: 10 }),
+                createCodexTokenCount('2026-06-02T08:03:00.000Z', { inputTokens: 160, cachedInputTokens: 70, outputTokens: 25 })
+            ]);
+            await createCodexTranscript(codexHomeDir, ['archived_sessions', '2026', '06', '01', 'session-b.jsonl'], [
+                createCodexSessionMeta('session-b', '2026-06-01T08:00:00.000Z'),
+                createCodexTurnContext('2026-06-01T08:00:01.000Z', 'gpt-5.3-codex-spark'),
+                createCodexTokenCount('2026-06-01T08:01:00.000Z', { inputTokens: 50, cachedInputTokens: 10, outputTokens: 5 })
+            ]);
+            await createCodexTranscript(codexHomeDir, ['archived_sessions', '2026', '06', '02', 'session-a.jsonl'], [
+                createCodexSessionMeta('session-a', '2026-06-02T08:00:00.000Z'),
+                createCodexTurnContext('2026-06-02T08:00:01.000Z', 'gpt-5.5'),
+                createCodexTokenCount('2026-06-02T08:01:00.000Z', { inputTokens: 100, cachedInputTokens: 40, outputTokens: 10 })
+            ]);
+            const adapter = new CodexTokenUsageAdapter(codexHomeDir);
+
+            const measurements = await adapter.loadTokenUsage();
+            const report = createTokenUsageReport('daily', measurements);
+
+            expect(report.entries).toEqual([
+                {
+                    date: '2026-06-01',
+                    agent: 'codex',
+                    model: 'gpt-5.3-codex-spark',
+                    inputTokens: 40,
+                    outputTokens: 5,
+                    cachedTokens: 10,
+                    totalTokens: 55,
+                    cost: 0
+                },
+                {
+                    date: '2026-06-02',
+                    agent: 'codex',
+                    model: 'gpt-5.5',
+                    inputTokens: 90,
+                    outputTokens: 25,
+                    cachedTokens: 70,
+                    totalTokens: 185,
+                    cost: 0
+                }
+            ]);
+        });
+    });
+
+    test('filters codex usage by timestamp while preserving cumulative deltas', async () => {
+        await withTempDirectory(async (codexHomeDir) => {
+            await createCodexTranscript(codexHomeDir, ['sessions', '2026', '06', '02', 'session-a.jsonl'], [
+                createCodexTurnContext('2026-06-01T23:59:00.000Z', 'gpt-5.5'),
+                createCodexTokenCount('2026-06-01T23:59:30.000Z', { inputTokens: 100, cachedInputTokens: 40, outputTokens: 10 }),
+                createCodexTokenCount('2026-06-02T00:01:00.000Z', { inputTokens: 160, cachedInputTokens: 70, outputTokens: 25 })
+            ]);
+            const adapter = new CodexTokenUsageAdapter(codexHomeDir);
+            const range = {
+                start: new Date('2026-06-02T00:00:00.000Z'),
+                endExclusive: new Date('2026-06-03T00:00:00.000Z')
+            };
+
+            const measurements = await adapter.loadTokenUsage(range);
+            const report = createTokenUsageReport('today', measurements, range);
+
+            expect(report.entries).toEqual([
+                {
+                    date: '2026-06-02',
+                    agent: 'codex',
+                    model: 'gpt-5.5',
+                    inputTokens: 30,
+                    outputTokens: 15,
+                    cachedTokens: 30,
+                    totalTokens: 75,
+                    cost: 0
+                }
+            ]);
+        });
+    });
+});
+
 describe('coding agent token usage adapter', () => {
     test('activates only handlers whose usage path exists', async () => {
         const activeLoader = new FakeTokenUsageLoader([
@@ -441,4 +524,63 @@ async function createVibeSession(sessionDir: string, sessionName: string, meta: 
 
     await fs.mkdir(directory);
     await fs.writeFile(path.join(directory, 'meta.json'), JSON.stringify(meta), 'utf8');
+}
+
+interface CodexTokenCount {
+    inputTokens: number;
+    cachedInputTokens: number;
+    outputTokens: number;
+}
+
+async function createCodexTranscript(codexHomeDir: string, relativePath: string[], events: unknown[]): Promise<void> {
+    const transcriptPath = path.join(codexHomeDir, ...relativePath);
+
+    await fs.mkdir(path.dirname(transcriptPath), { recursive: true });
+    await fs.writeFile(transcriptPath, events.map((event) => JSON.stringify(event)).join('\n'), 'utf8');
+}
+
+function createCodexSessionMeta(id: string, timestamp: string): unknown {
+    return {
+        timestamp,
+        type: 'session_meta',
+        payload: {
+            id,
+            timestamp,
+            originator: 'codex-tui'
+        }
+    };
+}
+
+function createCodexTurnContext(timestamp: string, model: string): unknown {
+    return {
+        timestamp,
+        type: 'turn_context',
+        payload: {
+            model
+        }
+    };
+}
+
+function createCodexTokenCount(timestamp: string, totalUsage: CodexTokenCount): unknown {
+    return {
+        timestamp,
+        type: 'event_msg',
+        payload: {
+            type: 'token_count',
+            info: {
+                total_token_usage: {
+                    input_tokens: totalUsage.inputTokens,
+                    cached_input_tokens: totalUsage.cachedInputTokens,
+                    output_tokens: totalUsage.outputTokens,
+                    total_tokens: totalUsage.inputTokens + totalUsage.outputTokens
+                },
+                last_token_usage: {
+                    input_tokens: totalUsage.inputTokens,
+                    cached_input_tokens: totalUsage.cachedInputTokens,
+                    output_tokens: totalUsage.outputTokens,
+                    total_tokens: totalUsage.inputTokens + totalUsage.outputTokens
+                }
+            }
+        }
+    };
 }
