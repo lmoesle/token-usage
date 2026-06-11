@@ -7,12 +7,13 @@ This setup provides:
 - Token usage aggregation by date, agent, and model.
 - Cost calculation from configured model token prices.
 - Opencode usage extraction from the local SQLite database.
+- Vibe usage extraction from local session metadata.
 - Table output and raw JSON output.
 - TypeScript build with `webpack`.
 - npm scripts for build/lint/test.
 - GitHub Actions workflow for CI.
 
-The CLI reads Opencode usage from `~/.local/share/opencode/opencode.db` by default.
+The CLI reads Opencode usage from `~/.local/share/opencode/opencode.db` and Vibe usage from `~/.vibe/logs/session` by default. An agent adapter is activated only when its usage location exists.
 
 ```bash
 npx @lmoesle/token-usage-cli today
@@ -40,6 +41,14 @@ Use `--opencode-db` to read another SQLite database, for example the sample data
 
 ```bash
 npx @lmoesle/token-usage-cli daily --opencode-db sample-data/opencode.db
+```
+
+## Custom Vibe Sessions Directory
+
+Use `--vibe-session-dir` to read Vibe session metadata from another directory:
+
+```bash
+npx @lmoesle/token-usage-cli daily --vibe-session-dir ~/.vibe/logs/session
 ```
 
 ## Setup

@@ -1,9 +1,14 @@
 import { DatabaseSync } from 'node:sqlite';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import { createTokenUsageCli, TokenUsageUseCase } from '../src/index';
 import { LoadTokenPricesOutPort, LoadTokenUsageOutPort, ShowTokenUsageOutPort } from '../src/application/ports/out/tokenUsageOutPort';
 import { createTimeRange, createTokenUsageReport, parseTimePeriod, TimeRange, TokenPrices, TokenUsageMeasurement, TokenUsageReport } from '../src/domain/tokenUsage';
 import { OpencodeTokenUsageAdapter } from '../src/adapter/out/opencodeTokenUsageAdapter';
 import { TokenPriceConfigAdapter } from '../src/adapter/out/tokenPriceConfigAdapter';
+import { CodingAgentTokenUsageAdapter, CodingAgentUsageHandler } from '../src/adapter/out/codingAgentTokenUsageAdapter';
+import { VibeTokenUsageAdapter } from '../src/adapter/out/vibeTokenUsageAdapter';
 
 describe('token usage domain', () => {
     test('creates a local time range for today only', () => {
@@ -201,6 +206,99 @@ describe('opencode token usage adapter', () => {
     });
 });
 
+describe('vibe token usage adapter', () => {
+    test('loads token usage from vibe session metadata', async () => {
+        await withTempDirectory(async (sessionDir) => {
+            await createVibeSession(sessionDir, 'session_20260602_120000_a', {
+                start_time: new Date(2026, 5, 2, 12, 0, 0, 0).toISOString(),
+                config: {
+                    active_model: 'mistral-medium-3.5'
+                },
+                stats: {
+                    session_prompt_tokens: 100,
+                    session_completion_tokens: 20,
+                    session_total_llm_tokens: 120,
+                    session_cost: 1.5
+                }
+            });
+            await createVibeSession(sessionDir, 'session_20260602_130000_b', {
+                start_time: new Date(2026, 5, 2, 13, 0, 0, 0).toISOString(),
+                config: {
+                    active_model: 'mistral-medium-3.5'
+                },
+                stats: {
+                    session_prompt_tokens: 50,
+                    session_completion_tokens: 10,
+                    session_total_llm_tokens: 60,
+                    session_cost: 2.5
+                }
+            });
+            await createVibeSession(sessionDir, 'session_20260601_120000_c', {
+                start_time: new Date(2026, 5, 1, 12, 0, 0, 0).toISOString(),
+                stats: {
+                    session_prompt_tokens: 999,
+                    session_completion_tokens: 999,
+                    session_total_llm_tokens: 1_998,
+                    session_cost: 999
+                }
+            });
+
+            const adapter = new VibeTokenUsageAdapter(sessionDir);
+            const range = {
+                start: new Date(2026, 5, 2, 0, 0, 0, 0),
+                endExclusive: new Date(2026, 5, 3, 0, 0, 0, 0)
+            };
+
+            const measurements = await adapter.loadTokenUsage(range);
+            const report = createTokenUsageReport('today', measurements, range);
+
+            expect(report.entries).toEqual([
+                {
+                    date: '2026-06-02',
+                    agent: 'vibe',
+                    model: 'mistral-medium-3.5',
+                    inputTokens: 150,
+                    outputTokens: 30,
+                    cachedTokens: 0,
+                    totalTokens: 180,
+                    cost: 4
+                }
+            ]);
+        });
+    });
+});
+
+describe('coding agent token usage adapter', () => {
+    test('activates only handlers whose usage path exists', async () => {
+        const activeLoader = new FakeTokenUsageLoader([
+            { date: '2026-06-02', agent: 'opencode', model: 'gpt-5.5', inputTokens: 1, outputTokens: 2, cachedTokens: 3 }
+        ]);
+        const inactiveLoader = new FakeTokenUsageLoader([
+            { date: '2026-06-02', agent: 'vibe', model: 'unknown', inputTokens: 999, outputTokens: 999, cachedTokens: 0 }
+        ]);
+        const activeHandler = new FakeCodingAgentUsageHandler('opencode', '/active/opencode.db', activeLoader);
+        const inactiveHandler = new FakeCodingAgentUsageHandler('vibe', '/missing/vibe', inactiveLoader);
+        const range = {
+            start: new Date(2026, 5, 2, 0, 0, 0, 0),
+            endExclusive: new Date(2026, 5, 3, 0, 0, 0, 0)
+        };
+        const adapter = new CodingAgentTokenUsageAdapter([
+            activeHandler,
+            inactiveHandler
+        ], (usagePath) => usagePath === '/active/opencode.db');
+
+        const measurements = await adapter.loadTokenUsage(range);
+
+        expect(activeHandler.activated).toBe(true);
+        expect(inactiveHandler.activated).toBe(false);
+        expect(activeLoader.loadedRange).toBe(range);
+        expect(inactiveLoader.loadedRange).toBeUndefined();
+        expect(measurements).toEqual([
+            { date: '2026-06-02', agent: 'opencode', model: 'gpt-5.5', inputTokens: 1, outputTokens: 2, cachedTokens: 3 }
+        ]);
+    });
+});
+
 describe('token usage cli', () => {
     test('prints raw token usage as json', async () => {
         const output: string[] = [];
@@ -234,6 +332,21 @@ class FakeTokenUsageLoader implements LoadTokenUsageOutPort {
     async loadTokenUsage(range?: TimeRange): Promise<TokenUsageMeasurement[]> {
         this.loadedRange = range;
         return this.measurements;
+    }
+}
+
+class FakeCodingAgentUsageHandler implements CodingAgentUsageHandler {
+    activated = false;
+
+    constructor(
+        readonly agent: string,
+        readonly usagePath: string,
+        private adapter: LoadTokenUsageOutPort
+    ) {}
+
+    createAdapter(): LoadTokenUsageOutPort {
+        this.activated = true;
+        return this.adapter;
     }
 }
 
@@ -311,4 +424,21 @@ function createOpencodeFixtureRow(row: Omit<OpencodeFixtureRow, 'timeCreated'> &
         cacheReadTokens: row.cacheReadTokens,
         cacheWriteTokens: row.cacheWriteTokens
     };
+}
+
+async function withTempDirectory(action: (directory: string) => Promise<void>): Promise<void> {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'token-usage-'));
+
+    try {
+        await action(directory);
+    } finally {
+        await fs.rm(directory, { recursive: true, force: true });
+    }
+}
+
+async function createVibeSession(sessionDir: string, sessionName: string, meta: unknown): Promise<void> {
+    const directory = path.join(sessionDir, sessionName);
+
+    await fs.mkdir(directory);
+    await fs.writeFile(path.join(directory, 'meta.json'), JSON.stringify(meta), 'utf8');
 }

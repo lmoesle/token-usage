@@ -1,10 +1,12 @@
 import { Command } from 'commander';
 import { TokenUsageUseCase } from '../../application/usecases/tokenUsageUseCase';
 import { ConsoleTokenUsagePresenter } from '../out/consoleTokenUsagePresenter';
-import { DEFAULT_OPENCODE_DB_PATH, OpencodeTokenUsageAdapter } from '../out/opencodeTokenUsageAdapter';
+import { CodingAgentTokenUsageAdapter } from '../out/codingAgentTokenUsageAdapter';
+import { DEFAULT_OPENCODE_DB_PATH, OpencodeTokenUsageHandler } from '../out/opencodeTokenUsageAdapter';
 import { JsonTokenUsagePresenter } from '../out/jsonTokenUsagePresenter';
 import { LoadTokenPricesOutPort, LoadTokenUsageOutPort } from '../../application/ports/out/tokenUsageOutPort';
 import { TokenPriceConfigAdapter } from '../out/tokenPriceConfigAdapter';
+import { DEFAULT_VIBE_SESSION_DIR, VibeTokenUsageHandler } from '../out/vibeTokenUsageAdapter';
 
 declare const TOKEN_USAGE_CLI_VERSION: string | undefined;
 
@@ -15,6 +17,7 @@ const cliVersion = typeof TOKEN_USAGE_CLI_VERSION === 'string'
 interface TokenUsageCliOptions {
     raw?: boolean;
     opencodeDb?: string;
+    vibeSessionDir?: string;
 }
 
 export interface TokenUsageCliDependencies {
@@ -35,9 +38,13 @@ export function createTokenUsageCli(dependencies: TokenUsageCliDependencies = {}
         .argument('<time-period>', 'time period to view: today, daily, weekly, monthly or yearly')
         .option('--raw', 'print token usage as JSON instead of a table')
         .option('--opencode-db <path>', `path to the opencode SQLite database (default: ${DEFAULT_OPENCODE_DB_PATH})`)
+        .option('--vibe-session-dir <path>', `path to the vibe session logs directory (default: ${DEFAULT_VIBE_SESSION_DIR})`)
         .action(async (timePeriod: string, options: TokenUsageCliOptions) => {
             const loadTokenUsageOutPort = dependencies.loadTokenUsageOutPort
-                ?? new OpencodeTokenUsageAdapter(options.opencodeDb ?? DEFAULT_OPENCODE_DB_PATH);
+                ?? new CodingAgentTokenUsageAdapter([
+                    new OpencodeTokenUsageHandler(options.opencodeDb ?? DEFAULT_OPENCODE_DB_PATH),
+                    new VibeTokenUsageHandler(options.vibeSessionDir ?? DEFAULT_VIBE_SESSION_DIR)
+                ]);
             const loadTokenPricesOutPort = dependencies.loadTokenPricesOutPort ?? new TokenPriceConfigAdapter();
             const showTokenUsageOutPort = options.raw
                 ? new JsonTokenUsagePresenter(writeLine)

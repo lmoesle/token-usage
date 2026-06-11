@@ -14,6 +14,7 @@ export interface TokenUsageMeasurement {
     inputTokens: number;
     outputTokens: number;
     cachedTokens: number;
+    cost?: number;
 }
 
 export interface TokenPrice {
@@ -89,13 +90,16 @@ export function createTokenUsageReport(
         existing.inputTokens += groupedMeasurement.inputTokens;
         existing.outputTokens += groupedMeasurement.outputTokens;
         existing.cachedTokens += groupedMeasurement.cachedTokens;
+        if (groupedMeasurement.cost !== undefined) {
+            existing.cost = (existing.cost ?? 0) + groupedMeasurement.cost;
+        }
     }
 
     const entries = Array.from(entriesByKey.values())
         .map((measurement) => ({
             ...measurement,
             totalTokens: measurement.inputTokens + measurement.outputTokens + measurement.cachedTokens,
-            cost: calculateCost(measurement, tokenPrices[measurement.model])
+            cost: measurement.cost ?? calculateCost(measurement, tokenPrices[measurement.model])
         }))
         .sort((a, b) => {
             const dateCompare = a.date.localeCompare(b.date);

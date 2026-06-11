@@ -1,12 +1,12 @@
 import { DatabaseSync } from 'node:sqlite';
-import os from 'node:os';
-import path from 'node:path';
 import { LoadTokenUsageOutPort } from '../../application/ports/out/tokenUsageOutPort';
 import { TimeRange, TokenUsageMeasurement, toDateKey } from '../../domain/tokenUsage';
+import { CodingAgentUsageHandler } from './codingAgentTokenUsageAdapter';
+import { expandHome } from './usagePath';
 
 export const DEFAULT_OPENCODE_DB_PATH = '~/.local/share/opencode/opencode.db';
-const OPENCODE_AGENT = 'opencode';
-type OpenDatabase = (dbPath: string) => DatabaseSync;
+export const OPENCODE_AGENT = 'opencode';
+export type OpenDatabase = (dbPath: string) => DatabaseSync;
 
 interface OpencodeSessionRow {
     time_created: number;
@@ -15,6 +15,22 @@ interface OpencodeSessionRow {
     tokens_output: number;
     tokens_cache_read: number;
     tokens_cache_write: number;
+}
+
+export class OpencodeTokenUsageHandler implements CodingAgentUsageHandler {
+    readonly agent = OPENCODE_AGENT;
+    readonly usagePath: string;
+
+    constructor(
+        private dbPath: string = DEFAULT_OPENCODE_DB_PATH,
+        private openDatabase: OpenDatabase = (dbPath) => new DatabaseSync(dbPath, { readOnly: true })
+    ) {
+        this.usagePath = dbPath;
+    }
+
+    createAdapter(): LoadTokenUsageOutPort {
+        return new OpencodeTokenUsageAdapter(this.dbPath, this.openDatabase);
+    }
 }
 
 export class OpencodeTokenUsageAdapter implements LoadTokenUsageOutPort {
@@ -103,18 +119,6 @@ export class OpencodeTokenUsageAdapter implements LoadTokenUsageOutPort {
 
         return rawModel;
     }
-}
-
-function expandHome(filePath: string): string {
-    if (filePath === '~') {
-        return os.homedir();
-    }
-
-    if (filePath.startsWith('~/')) {
-        return path.join(os.homedir(), filePath.slice(2));
-    }
-
-    return filePath;
 }
 
 function toTokenCount(value: number): number {
