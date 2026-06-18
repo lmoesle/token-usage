@@ -8,6 +8,7 @@ import { LoadTokenPricesOutPort, LoadTokenUsageOutPort } from '../../application
 import { TokenPriceConfigAdapter } from '../out/tokenPriceConfigAdapter';
 import { DEFAULT_VIBE_SESSION_DIR, VibeTokenUsageHandler } from '../out/vibeTokenUsageAdapter';
 import { CodexTokenUsageHandler, DEFAULT_CODEX_HOME_DIR } from '../out/codexTokenUsageAdapter';
+import { DEFAULT_JUNIE_SESSIONS_DIR, JunieTokenUsageHandler } from '../out/junieTokenUsageAdapter';
 
 declare const TOKEN_USAGE_CLI_VERSION: string | undefined;
 
@@ -20,6 +21,7 @@ interface TokenUsageCliOptions {
     opencodeDb?: string;
     vibeSessionDir?: string;
     codexHome?: string;
+    junieSessionsDir?: string;
 }
 
 export interface TokenUsageCliDependencies {
@@ -42,12 +44,14 @@ export function createTokenUsageCli(dependencies: TokenUsageCliDependencies = {}
         .option('--opencode-db <path>', `path to the opencode SQLite database (default: ${DEFAULT_OPENCODE_DB_PATH})`)
         .option('--vibe-session-dir <path>', `path to the vibe session logs directory (default: ${DEFAULT_VIBE_SESSION_DIR})`)
         .option('--codex-home <path>', `path to the codex home directory (default: ${DEFAULT_CODEX_HOME_DIR})`)
+        .option('--junie-sessions-dir <path>', `path to the junie sessions directory (default: ${DEFAULT_JUNIE_SESSIONS_DIR})`)
         .action(async (timePeriod: string, options: TokenUsageCliOptions) => {
             const loadTokenUsageOutPort = dependencies.loadTokenUsageOutPort
                 ?? new CodingAgentTokenUsageAdapter([
                     new OpencodeTokenUsageHandler(options.opencodeDb ?? DEFAULT_OPENCODE_DB_PATH),
                     new VibeTokenUsageHandler(options.vibeSessionDir ?? DEFAULT_VIBE_SESSION_DIR),
-                    new CodexTokenUsageHandler(options.codexHome ?? DEFAULT_CODEX_HOME_DIR)
+                    new CodexTokenUsageHandler(options.codexHome ?? DEFAULT_CODEX_HOME_DIR),
+                    new JunieTokenUsageHandler(options.junieSessionsDir ?? DEFAULT_JUNIE_SESSIONS_DIR)
                 ]);
             const loadTokenPricesOutPort = dependencies.loadTokenPricesOutPort ?? new TokenPriceConfigAdapter();
             const showTokenUsageOutPort = options.raw

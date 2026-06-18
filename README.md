@@ -9,12 +9,13 @@ This setup provides:
 - Opencode usage extraction from the local SQLite database.
 - Vibe usage extraction from local session metadata.
 - Codex usage extraction from local session transcripts and archived sessions.
+- Junie usage extraction from local session event streams.
 - Table output and raw JSON output.
 - TypeScript build with `webpack`.
 - npm scripts for build/lint/test.
 - GitHub Actions workflow for CI.
 
-The CLI reads Opencode usage from `~/.local/share/opencode/opencode.db`, Vibe usage from `~/.vibe/logs/session`, and Codex usage from `~/.codex/sessions` plus `~/.codex/archived_sessions` by default. An agent adapter is activated only when its usage location exists.
+The CLI reads Opencode usage from `~/.local/share/opencode/opencode.db`, Vibe usage from `~/.vibe/logs/session`, Codex usage from `~/.codex/sessions` plus `~/.codex/archived_sessions`, and Junie usage from `~/.junie/sessions` by default. An agent adapter is activated only when its usage location exists.
 
 ```bash
 npx @lmoesle/token-usage-cli today
@@ -58,6 +59,14 @@ Use `--codex-home` to read Codex transcripts from another Codex home directory:
 
 ```bash
 npx @lmoesle/token-usage-cli daily --codex-home ~/.codex
+```
+
+## Custom Junie Sessions Directory
+
+Use `--junie-sessions-dir` to read Junie usage from another sessions directory. Junie records token usage (including cost) in each session's `events.jsonl`, so Junie costs come directly from Junie instead of `src/adapter/out/tokenPrices.json`:
+
+```bash
+npx @lmoesle/token-usage-cli daily --junie-sessions-dir ~/.junie/sessions
 ```
 
 ## Setup

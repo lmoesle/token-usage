@@ -10,6 +10,7 @@ import { TokenPriceConfigAdapter } from '../src/adapter/out/tokenPriceConfigAdap
 import { CodingAgentTokenUsageAdapter, CodingAgentUsageHandler } from '../src/adapter/out/codingAgentTokenUsageAdapter';
 import { VibeTokenUsageAdapter } from '../src/adapter/out/vibeTokenUsageAdapter';
 import { CodexTokenUsageAdapter } from '../src/adapter/out/codexTokenUsageAdapter';
+import { JunieTokenUsageAdapter } from '../src/adapter/out/junieTokenUsageAdapter';
 
 describe('token usage domain', () => {
     test('creates a local time range for today only', () => {
@@ -351,6 +352,122 @@ describe('codex token usage adapter', () => {
     });
 });
 
+describe('junie token usage adapter', () => {
+    test('loads token usage from junie session events', async () => {
+        await withTempDirectory(async (sessionsDir) => {
+            await createJunieSession(sessionsDir, 'session-260602-080000-aaaa', [
+                createJunieUsageEvent(new Date(2026, 5, 2, 8, 0, 0, 0).getTime(), {
+                    model: 'gpt-5.5',
+                    cost: 1.5,
+                    inputTokens: 100,
+                    cacheInputTokens: 40,
+                    cacheCreateTokens: 10,
+                    outputTokens: 5
+                }),
+                createJunieStatusEvent(new Date(2026, 5, 2, 8, 1, 0, 0).getTime()),
+                createJunieUsageEvent(new Date(2026, 5, 2, 8, 5, 0, 0).getTime(), {
+                    model: 'gpt-5.5',
+                    cost: 0.5,
+                    inputTokens: 50,
+                    cacheInputTokens: 0,
+                    cacheCreateTokens: 0,
+                    outputTokens: 3
+                }),
+                createJunieUsageEvent(new Date(2026, 5, 2, 8, 9, 0, 0).getTime(), {
+                    model: 'gpt-5.5',
+                    cost: 0,
+                    inputTokens: 0,
+                    cacheInputTokens: 0,
+                    cacheCreateTokens: 0,
+                    outputTokens: 0
+                })
+            ]);
+            await createJunieSession(sessionsDir, 'session-260601-090000-bbbb', [
+                createJunieUsageEvent(new Date(2026, 5, 1, 9, 0, 0, 0).getTime(), {
+                    model: 'claude-opus-4-8',
+                    cost: 3.25,
+                    inputTokens: 2,
+                    cacheInputTokens: 1_000,
+                    cacheCreateTokens: 500,
+                    outputTokens: 20
+                })
+            ]);
+
+            const adapter = new JunieTokenUsageAdapter(sessionsDir);
+
+            const measurements = await adapter.loadTokenUsage();
+            const report = createTokenUsageReport('daily', measurements);
+
+            expect(report.entries).toEqual([
+                {
+                    date: '2026-06-01',
+                    agent: 'junie',
+                    model: 'claude-opus-4-8',
+                    inputTokens: 502,
+                    outputTokens: 20,
+                    cachedTokens: 1_000,
+                    totalTokens: 1_522,
+                    cost: 3.25
+                },
+                {
+                    date: '2026-06-02',
+                    agent: 'junie',
+                    model: 'gpt-5.5',
+                    inputTokens: 160,
+                    outputTokens: 8,
+                    cachedTokens: 40,
+                    totalTokens: 208,
+                    cost: 2
+                }
+            ]);
+        });
+    });
+
+    test('filters junie usage by event timestamp', async () => {
+        await withTempDirectory(async (sessionsDir) => {
+            await createJunieSession(sessionsDir, 'session-260602-000000-cccc', [
+                createJunieUsageEvent(new Date(2026, 5, 1, 23, 59, 0, 0).getTime(), {
+                    model: 'gpt-5.5',
+                    cost: 99,
+                    inputTokens: 999,
+                    cacheInputTokens: 999,
+                    cacheCreateTokens: 999,
+                    outputTokens: 999
+                }),
+                createJunieUsageEvent(new Date(2026, 5, 2, 0, 1, 0, 0).getTime(), {
+                    model: 'gpt-5.5',
+                    cost: 0.75,
+                    inputTokens: 80,
+                    cacheInputTokens: 20,
+                    cacheCreateTokens: 5,
+                    outputTokens: 7
+                })
+            ]);
+            const adapter = new JunieTokenUsageAdapter(sessionsDir);
+            const range = {
+                start: new Date(2026, 5, 2, 0, 0, 0, 0),
+                endExclusive: new Date(2026, 5, 3, 0, 0, 0, 0)
+            };
+
+            const measurements = await adapter.loadTokenUsage(range);
+            const report = createTokenUsageReport('today', measurements, range);
+
+            expect(report.entries).toEqual([
+                {
+                    date: '2026-06-02',
+                    agent: 'junie',
+                    model: 'gpt-5.5',
+                    inputTokens: 85,
+                    outputTokens: 7,
+                    cachedTokens: 20,
+                    totalTokens: 112,
+                    cost: 0.75
+                }
+            ]);
+        });
+    });
+});
+
 describe('coding agent token usage adapter', () => {
     test('activates only handlers whose usage path exists', async () => {
         const activeLoader = new FakeTokenUsageLoader([
@@ -582,5 +699,61 @@ function createCodexTokenCount(timestamp: string, totalUsage: CodexTokenCount): 
                 }
             }
         }
+    };
+}
+
+interface JunieModelUsage {
+    model: string;
+    cost: number;
+    inputTokens: number;
+    cacheInputTokens: number;
+    cacheCreateTokens: number;
+    outputTokens: number;
+}
+
+async function createJunieSession(sessionsDir: string, sessionId: string, events: unknown[]): Promise<void> {
+    const directory = path.join(sessionsDir, sessionId);
+
+    await fs.mkdir(directory);
+    await fs.writeFile(path.join(directory, 'events.jsonl'), events.map((event) => JSON.stringify(event)).join('\n'), 'utf8');
+}
+
+function createJunieUsageEvent(timestampMs: number, modelUsage: JunieModelUsage): unknown {
+    return {
+        kind: 'SessionA2uxEvent',
+        event: {
+            state: 'IN_PROGRESS',
+            agentEvent: {
+                kind: 'LlmResponseMetadataEvent',
+                agent: { kind: 'MainAgent', id: 'main', name: 'main' },
+                modelUsage: [
+                    {
+                        model: modelUsage.model,
+                        cost: modelUsage.cost,
+                        inputTokens: modelUsage.inputTokens,
+                        cacheInputTokens: modelUsage.cacheInputTokens,
+                        cacheCreateTokens: modelUsage.cacheCreateTokens,
+                        outputTokens: modelUsage.outputTokens,
+                        time: 0
+                    }
+                ]
+            }
+        },
+        timestampMs
+    };
+}
+
+function createJunieStatusEvent(timestampMs: number): unknown {
+    return {
+        kind: 'SessionA2uxEvent',
+        event: {
+            state: 'IN_PROGRESS',
+            agentEvent: {
+                kind: 'AgentCurrentStatusUpdatedEvent',
+                agent: { kind: 'MainAgent', id: 'main', name: 'main' },
+                status: 'Thinking'
+            }
+        },
+        timestampMs
     };
 }
