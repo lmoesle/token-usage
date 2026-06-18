@@ -1,6 +1,6 @@
 {
   "name": "@lmoesle/token-usage-cli",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "CLI for tracking AI agent token usage",
   "repository": {
     "type": "git",
