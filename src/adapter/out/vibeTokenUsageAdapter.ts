@@ -49,7 +49,7 @@ export class VibeTokenUsageAdapter implements LoadTokenUsageOutPort {
             }
 
             const error = err instanceof Error ? err : new Error(String(err));
-            throw new Error(`Failed to read vibe usage sessions at ${resolvedSessionDir}: ${error.message}`);
+            throw new Error(`Failed to read vibe usage sessions at ${resolvedSessionDir}: ${error.message}`, { cause: err });
         }
     }
 

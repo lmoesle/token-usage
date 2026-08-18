@@ -51,7 +51,7 @@ export class JunieTokenUsageAdapter implements LoadTokenUsageOutPort {
             }
 
             const error = err instanceof Error ? err : new Error(String(err));
-            throw new Error(`Failed to read junie usage sessions at ${resolvedSessionsDir}: ${error.message}`);
+            throw new Error(`Failed to read junie usage sessions at ${resolvedSessionsDir}: ${error.message}`, { cause: err });
         }
     }
 
@@ -142,7 +142,7 @@ function parseJsonLine(line: string, eventsFile: string, lineNumber: number): Js
         return isJsonObject(value) ? value : {};
     } catch (err: unknown) {
         const error = err instanceof Error ? err : new Error(String(err));
-        throw new Error(`Invalid JSON in ${eventsFile}:${lineNumber}: ${error.message}`);
+        throw new Error(`Invalid JSON in ${eventsFile}:${lineNumber}: ${error.message}`, { cause: err });
     }
 }
 

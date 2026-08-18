@@ -63,7 +63,7 @@ export class CodexTokenUsageAdapter implements LoadTokenUsageOutPort {
             });
         } catch (err: unknown) {
             const error = err instanceof Error ? err : new Error(String(err));
-            throw new Error(`Failed to read codex usage transcripts at ${resolvedHomeDir}: ${error.message}`);
+            throw new Error(`Failed to read codex usage transcripts at ${resolvedHomeDir}: ${error.message}`, { cause: err });
         }
     }
 
@@ -173,7 +173,7 @@ function parseJsonLine(line: string, transcriptFile: string, lineNumber: number)
         return isJsonObject(value) ? value : {};
     } catch (err: unknown) {
         const error = err instanceof Error ? err : new Error(String(err));
-        throw new Error(`Invalid JSON in ${transcriptFile}:${lineNumber}: ${error.message}`);
+        throw new Error(`Invalid JSON in ${transcriptFile}:${lineNumber}: ${error.message}`, { cause: err });
     }
 }
 
