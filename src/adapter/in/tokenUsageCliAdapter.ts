@@ -1,4 +1,5 @@
-import { Command } from 'commander';
+import { Command as CommanderCommand } from 'commander';
+import type { Command } from 'commander' with { 'resolution-mode': 'import' };
 import { TokenUsageUseCase } from '../../application/usecases/tokenUsageUseCase';
 import { ConsoleTokenUsagePresenter } from '../out/consoleTokenUsagePresenter';
 import { CodingAgentTokenUsageAdapter } from '../out/codingAgentTokenUsageAdapter';
@@ -32,7 +33,7 @@ export interface TokenUsageCliDependencies {
 }
 
 export function createTokenUsageCli(dependencies: TokenUsageCliDependencies = {}): Command {
-    const program = new Command();
+    const program = new CommanderCommand();
     const writeLine = dependencies.writeLine ?? console.log;
 
     program

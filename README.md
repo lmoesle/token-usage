@@ -94,4 +94,7 @@ npm start -- today
 ## Development
 
 - `npm run lint` – lint source and test files.
+- `npm run typecheck` – type-check source and tests with native TypeScript 7.
 - `npm test` – run unit tests.
+
+Compiler-API consumers such as `ts-loader` and TypeScript ESLint use the TypeScript 6 compatibility package while TypeScript 7 does not expose a programmatic API.
