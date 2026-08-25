@@ -21,28 +21,32 @@
     "access": "public"
   },
   "scripts": {
-    "build": "webpack",
+    "build": "npm run typecheck && webpack && npm run typecheck:consumer",
     "lint": "eslint .",
     "prepack": "npm run build",
     "start": "npm run build && node dist/index.js",
-    "test": "jest"
+    "test": "npm run typecheck && jest",
+    "typecheck": "tsc --noEmit --project tsconfig.test.json",
+    "typecheck:consumer": "tsc6 --project tsconfig.consumer.json"
   },
   "license": "MIT",
   "dependencies": {
-    "commander": "^14.0.3"
+    "commander": "^15.0.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@swc/core": "^1.16.1",
+    "@swc/jest": "^0.2.39",
     "@types/jest": "^30.0.0",
     "@types/node": "^26.2.0",
     "@typescript-eslint/eslint-plugin": "^8.67.0",
     "@typescript-eslint/parser": "^8.67.0",
+    "@typescript/native": "npm:typescript@^7.0.2",
     "eslint": "^10.8.1",
     "globals": "^17.11.0",
     "jest": "^30.4.2",
-    "ts-jest": "^29.4.12",
     "ts-loader": "^9.6.2",
-    "typescript": "^5.9.3",
+    "typescript": "npm:@typescript/typescript6@^6.0.2",
     "webpack": "^5.109.2",
     "webpack-cli": "^7.2.2"
   }
