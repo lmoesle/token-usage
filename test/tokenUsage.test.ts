@@ -135,6 +135,8 @@ describe('token price config adapter', () => {
         expect(prices['gpt-5.6-sol']).toEqual({ input: 5, cached: 0.5, output: 30 });
         expect(prices['gpt-5.6-terra']).toEqual({ input: 2, cached: 0.2, output: 12 });
         expect(prices['gpt-5.6-luna']).toEqual({ input: 0.2, cached: 0.02, output: 1.2 });
+        expect(prices['gpt-6-luna']).toEqual({ input: 0.1, cached: 0.125, output: 0.5 });
+        expect(prices['gpt-6-sol']).toEqual({ input: 2, cached: 2.5, output: 10 });
         expect(prices['claude-sonnet-4-5']).toEqual({ input: 3, cached: 0.3, output: 15 });
         expect(prices['deepseek-v4-flash']).toEqual({ input: 0.14, cached: 0.03, output: 0.28 });
         expect(prices['gemini-3-pro']).toEqual({ input: 2, cached: 0.2, output: 12 });
@@ -151,6 +153,20 @@ describe('token price config adapter', () => {
             expect(typeof price.cached).toBe('number');
             expect(typeof price.output).toBe('number');
         }
+    });
+
+    test.each([
+        ['gpt-6-luna', 0.725, 0.125],
+        ['gpt-6-sol', 14.5, 2.5]
+    ])('calculates %s costs from configured prices', async (model, combinedCost, cachedCost) => {
+        const prices = await new TokenPriceConfigAdapter().loadTokenPrices();
+        const measurement = { date: '2026-05-26', agent: 'opencode', model, inputTokens: 1_000_000, cachedTokens: 1_000_000, outputTokens: 1_000_000 };
+
+        const report = createTokenUsageReport('daily', [measurement], undefined, prices);
+        const cachedOnlyReport = createTokenUsageReport('daily', [{ ...measurement, inputTokens: 0, outputTokens: 0 }], undefined, prices);
+
+        expect(report.entries[0].cost).toBeCloseTo(combinedCost);
+        expect(cachedOnlyReport.entries[0].cost).toBeCloseTo(cachedCost);
     });
 });
 
