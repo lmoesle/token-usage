@@ -546,7 +546,7 @@
   },
   "gpt-6-sol": {
     "input": 2,
-    "cached": 2.5,
+    "cached": 0.2,
     "output": 10
   },
   "grok-build-0.1": {
