@@ -2,6 +2,7 @@ import { DatabaseSync } from 'node:sqlite';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import ts from 'typescript';
 import { createTokenUsageCli, TokenUsageUseCase } from '../src/index';
 import { LoadTokenPricesOutPort, LoadTokenUsageOutPort, ShowTokenUsageOutPort } from '../src/application/ports/out/tokenUsageOutPort';
 import { createTimeRange, createTokenUsageReport, parseTimePeriod, TimeRange, TokenPrices, TokenUsageMeasurement, TokenUsageReport } from '../src/domain/tokenUsage';
@@ -137,6 +138,7 @@ describe('token price config adapter', () => {
         expect(prices['gpt-5.6-luna']).toEqual({ input: 0.2, cached: 0.02, output: 1.2 });
         expect(prices['gpt-6-luna']).toEqual({ input: 0.1, cached: 0.125, output: 0.5 });
         expect(prices['gpt-6-sol']).toEqual({ input: 2, cached: 0.2, output: 10 });
+        expect(prices['gpt-6.1-sol']).toEqual({ input: 2, cached: 0.1, output: 10 });
         expect(prices['claude-sonnet-4-5']).toEqual({ input: 3, cached: 0.3, output: 15 });
         expect(prices['deepseek-v4-flash']).toEqual({ input: 0.14, cached: 0.03, output: 0.28 });
         expect(prices['gemini-3-pro']).toEqual({ input: 2, cached: 0.2, output: 12 });
@@ -156,8 +158,74 @@ describe('token price config adapter', () => {
     });
 
     test.each([
+        ['claude-fable-5', 10, 1, 50],
+        ['claude-fable-5-1', 10, 0.25, 50],
+        ['claude-opus-5', 5, 0.5, 25],
+        ['claude-opus-5-5', 4, 0.2, 20],
+        ['claude-sonnet-5', 2, 0.2, 10],
+        ['deepseek-v4-flash-vision-exp', 0.14, 0.028, 0.28],
+        ['deepseek-v4-pro', 1.74, 0.145, 3.48],
+        ['deepseek-v4.1-flash', 0.3, 0.006, 1.2],
+        ['gemini-3.5-flash-lite', 0.3, 0.03, 2.5],
+        ['gemini-3.6-flash', 1.5, 0.15, 7.5],
+        ['gemini-3.7-flash', 1.5, 0.15, 7.5],
+        ['gemini-3.8-flash', 1.5, 0.15, 7.5],
+        ['glm-5.2', 1.4, 0.26, 4.4],
+        ['glm-5.3', 1.4, 0.26, 4.4],
+        ['glm-5.3-flash', 0.15, 0.03, 0.5],
+        ['grok-4.5', 4, 0.6, 12],
+        ['grok-4.6', 4, 1, 12],
+        ['grok-4.7', 4, 1, 12],
+        ['jev-1.13', 0.042, 0, 0],
+        ['jev-1.13-free', 0, 0, 0],
+        ['kimi-k2.7-code', 0.95, 0.19, 4],
+        ['kimi-k3', 3, 0.3, 15],
+        ['ling-3.0-flash-fin-free', 0, 0, 0],
+        ['longcat-2.5-preview-free', 0, 0, 0],
+        ['mimo-v2.6-flash-free', 0, 0, 0],
+        ['minimax-m3', 0.3, 0.06, 1.2],
+        ['muse-spark-1.2', 1.25, 0.15, 4.25],
+        ['muse-spark-1.3', 1.25, 0.15, 4.25],
+        ['muse-spark-1.3-contributor-free', 0, 0, 0],
+        ['nemotron-3-ultra-free', 0, 0, 0],
+        ['nemotron-3.5-lightning-free', 0, 0, 0],
+        ['qwen3.7-max', 2.5, 0.5, 7.5],
+        ['qwen3.7-plus', 0.4, 0.04, 1.6],
+        ['qwen3.8-flash', 0.15, 0.016, 0.47],
+        ['qwen3.8-max', 2, 0.25, 6],
+        ['space-bunny-free', 0, 0, 0]
+    ])('loads %s with its exact configured prices', async (model, input, cached, output) => {
+        const prices = await new TokenPriceConfigAdapter().loadTokenPrices();
+
+        expect(Object.hasOwn(prices, model)).toBe(true);
+        expect(prices[model]).toEqual({ input, cached, output });
+    });
+
+    test('does not define duplicate model IDs in the raw price config', async () => {
+        const file = path.join(__dirname, '../src/adapter/out/tokenPrices.json');
+        const source = ts.parseJsonText(file, await fs.readFile(file, 'utf8'));
+        const root = source.statements[0];
+        if (!ts.isExpressionStatement(root) || !ts.isObjectLiteralExpression(root.expression)) {
+            throw new Error('Expected a JSON object of model prices');
+        }
+
+        const models = root.expression.properties.map((property) => {
+            if (!ts.isPropertyAssignment(property) || !ts.isStringLiteral(property.name)) {
+                throw new Error('Expected a quoted model ID');
+            }
+            return property.name.text;
+        });
+
+        expect(new Set(models).size).toBe(models.length);
+    });
+
+    test.each([
         ['gpt-6-luna', 0.725, 0.125],
-        ['gpt-6-sol', 12.2, 0.2]
+        ['gpt-6-sol', 12.2, 0.2],
+        ['gpt-6.1-sol', 12.1, 0.1],
+        ['grok-4.5', 16.6, 0.6],
+        ['grok-4.6', 17, 1],
+        ['grok-4.7', 17, 1]
     ])('calculates %s costs from configured prices', async (model, combinedCost, cachedCost) => {
         const prices = await new TokenPriceConfigAdapter().loadTokenPrices();
         const measurement = { date: '2026-05-26', agent: 'opencode', model, inputTokens: 1_000_000, cachedTokens: 1_000_000, outputTokens: 1_000_000 };
