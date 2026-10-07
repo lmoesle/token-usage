@@ -45,6 +45,8 @@ Use `--opencode-db` to read another SQLite database, for example the sample data
 npx @lmoesle/token-usage-cli daily --opencode-db sample-data/opencode.db
 ```
 
+The Opencode adapter reads the legacy `session` and V2 `session_v2` summary tables. When both exist, it includes distinct sessions from both and prefers V2 for matching session IDs to prevent double-counting. It attributes usage to each session's creation date and stored session model, not individual message dates or models.
+
 ## Custom Vibe Sessions Directory
 
 Use `--vibe-session-dir` to read Vibe session metadata from another directory:
