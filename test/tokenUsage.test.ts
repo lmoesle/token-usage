@@ -335,8 +335,8 @@ describe('token price config adapter', () => {
 });
 
 describe('opencode token usage adapter', () => {
-    test('loads token usage from the opencode sqlite database', async () => {
-        const adapter = new OpencodeTokenUsageAdapter(':memory:', () => createOpencodeFixtureDatabase());
+    test.each(['session', 'session_v2'] as const)('loads token usage from the opencode sqlite %s table', async (table) => {
+        const adapter = new OpencodeTokenUsageAdapter(':memory:', () => createOpencodeFixtureDatabase(table));
         const range = {
             start: new Date(2026, 5, 2, 0, 0, 0, 0),
             endExclusive: new Date(2026, 5, 3, 0, 0, 0, 0)
@@ -360,8 +360,8 @@ describe('opencode token usage adapter', () => {
         ]);
     });
 
-    test('loads the complete opencode sqlite history without a time range', async () => {
-        const adapter = new OpencodeTokenUsageAdapter(':memory:', () => createOpencodeFixtureDatabase());
+    test.each(['session', 'session_v2'] as const)('loads the complete opencode sqlite %s history without a time range', async (table) => {
+        const adapter = new OpencodeTokenUsageAdapter(':memory:', () => createOpencodeFixtureDatabase(table));
 
         const measurements = await adapter.loadTokenUsage();
         const report = createTokenUsageReport('daily', measurements);
@@ -388,6 +388,111 @@ describe('opencode token usage adapter', () => {
                 cost: 0
             }
         ]);
+    });
+
+    test('merges distinct session IDs chronologically and prefers V2 for migrated IDs', async () => {
+        const database = createOpencodeTables({
+            session: [
+                createOpencodeFixtureRow({ id: 'migrated', day: 1, model: 'stale-model', inputTokens: 999, outputTokens: 999, cacheReadTokens: 999, cacheWriteTokens: 999 }),
+                createOpencodeFixtureRow({ id: 'legacy-only', day: 2, model: 'shared-model', inputTokens: 10, outputTokens: 2, cacheReadTokens: 3, cacheWriteTokens: 4 })
+            ],
+            session_v2: [
+                createOpencodeFixtureRow({ id: 'migrated', day: 3, model: JSON.stringify({ id: 'new-model', providerID: 'openai' }), inputTokens: 20, outputTokens: 5, cacheReadTokens: 6, cacheWriteTokens: 7 }),
+                createOpencodeFixtureRow({ id: 'v2-only', day: 1, model: 'shared-model', inputTokens: 1, outputTokens: 2, cacheReadTokens: 3, cacheWriteTokens: 4 }),
+                { ...createOpencodeFixtureRow({ id: 'another-v2', day: 2, model: 'shared-model', inputTokens: 30, outputTokens: 8, cacheReadTokens: 9, cacheWriteTokens: 10 }), timeCreated: new Date(2026, 5, 2, 13).getTime() }
+            ]
+        });
+        const close = jest.spyOn(database, 'close');
+        const adapter = new OpencodeTokenUsageAdapter(':memory:', () => database);
+
+        expect(await adapter.loadTokenUsage()).toEqual([
+            { date: '2026-06-01', agent: 'opencode', model: 'shared-model', inputTokens: 5, outputTokens: 2, cachedTokens: 3 },
+            { date: '2026-06-02', agent: 'opencode', model: 'shared-model', inputTokens: 14, outputTokens: 2, cachedTokens: 3 },
+            { date: '2026-06-02', agent: 'opencode', model: 'shared-model', inputTokens: 40, outputTokens: 8, cachedTokens: 9 },
+            { date: '2026-06-03', agent: 'opencode', model: 'new-model', inputTokens: 27, outputTokens: 5, cachedTokens: 6 }
+        ]);
+        expect(close).toHaveBeenCalledTimes(1);
+    });
+
+    test('uses inclusive start and exclusive end for both tables', async () => {
+        const range = {
+            start: new Date(2026, 5, 2),
+            endExclusive: new Date(2026, 5, 3)
+        };
+        const row = createOpencodeFixtureRow({ day: 2, model: 'boundary-model', inputTokens: 1, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 });
+        const database = createOpencodeTables({
+            session: [
+                { ...row, id: 'legacy-start', timeCreated: range.start.getTime() },
+                { ...row, id: 'legacy-end', timeCreated: range.endExclusive.getTime() }
+            ],
+            session_v2: [
+                { ...row, id: 'v2-before', timeCreated: range.start.getTime() - 1 },
+                { ...row, id: 'v2-start', timeCreated: range.start.getTime() },
+                { ...row, id: 'v2-end', timeCreated: range.endExclusive.getTime() }
+            ]
+        });
+        const adapter = new OpencodeTokenUsageAdapter(':memory:', () => database);
+
+        expect(await adapter.loadTokenUsage(range)).toEqual([
+            { date: '2026-06-02', agent: 'opencode', model: 'boundary-model', inputTokens: 1, outputTokens: 0, cachedTokens: 0 },
+            { date: '2026-06-02', agent: 'opencode', model: 'boundary-model', inputTokens: 1, outputTokens: 0, cachedTokens: 0 }
+        ]);
+    });
+
+    test.each([
+        { name: 'out of range', day: 3, model: 'new-model', inputTokens: 10 },
+        { name: 'null model', day: 2, model: null, inputTokens: 10 },
+        { name: 'empty model', day: 2, model: '', inputTokens: 10 },
+        { name: 'whitespace model', day: 2, model: '  ', inputTokens: 10 },
+        { name: 'zero usage', day: 2, model: 'new-model', inputTokens: 0 }
+    ])('does not resurrect legacy usage when the V2 duplicate has $name', async ({ day, model, inputTokens }) => {
+        const database = createOpencodeTables({
+            session: [createOpencodeFixtureRow({ id: 'migrated', day: 2, model: 'stale-model', inputTokens: 999, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 })],
+            session_v2: [createOpencodeFixtureRow({ id: 'migrated', day, model, inputTokens, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 })]
+        });
+        const adapter = new OpencodeTokenUsageAdapter(':memory:', () => database);
+
+        expect(await adapter.loadTokenUsage({ start: new Date(2026, 5, 2), endExclusive: new Date(2026, 5, 3) })).toEqual([]);
+    });
+
+    test.each([
+        { name: 'legacy only', tables: { session: [] } },
+        { name: 'V2 only', tables: { session_v2: [] } },
+        { name: 'both', tables: { session: [], session_v2: [] } }
+    ])('returns no usage for empty recognized tables: $name', async ({ tables }) => {
+        const adapter = new OpencodeTokenUsageAdapter(':memory:', () => createOpencodeTables(tables));
+
+        expect(await adapter.loadTokenUsage()).toEqual([]);
+    });
+
+    test('retains legacy usage when the V2 table is empty', async () => {
+        const database = createOpencodeTables({
+            session: [createOpencodeFixtureRow({ id: 'legacy-only', day: 2, model: 'plain-model', inputTokens: 1, outputTokens: 2, cacheReadTokens: 3, cacheWriteTokens: 4 })],
+            session_v2: []
+        });
+        const adapter = new OpencodeTokenUsageAdapter(':memory:', () => database);
+
+        expect(await adapter.loadTokenUsage()).toEqual([
+            { date: '2026-06-02', agent: 'opencode', model: 'plain-model', inputTokens: 5, outputTokens: 2, cachedTokens: 3 }
+        ]);
+    });
+
+    test.each(['missing tables', 'invalid session schema'])('wraps database errors and closes the handle for %s', async (scenario) => {
+        const database = new DatabaseSync(':memory:');
+        if (scenario === 'invalid session schema') {
+            database.exec('CREATE TABLE session (id TEXT PRIMARY KEY)');
+        }
+        const close = jest.spyOn(database, 'close');
+        const openDatabase = jest.fn(() => database);
+        const adapter = new OpencodeTokenUsageAdapter('/fixtures/opencode.db', openDatabase);
+
+        const result = adapter.loadTokenUsage();
+        await expect(result).rejects.toThrow(/Failed to read opencode usage database at \/fixtures\/opencode\.db: .+/);
+        if (scenario === 'missing tables') {
+            await expect(result).rejects.toThrow(/session.*session_v2/);
+        }
+        expect(openDatabase).toHaveBeenCalledWith('/fixtures/opencode.db');
+        expect(close).toHaveBeenCalledTimes(1);
     });
 });
 
@@ -750,6 +855,7 @@ class FakeTokenPricesLoader implements LoadTokenPricesOutPort {
 }
 
 interface OpencodeFixtureRow {
+    id?: string;
     timeCreated: number;
     model: string | null;
     inputTokens: number;
@@ -758,41 +864,41 @@ interface OpencodeFixtureRow {
     cacheWriteTokens: number;
 }
 
-function createOpencodeFixtureDatabase(): DatabaseSync {
-    const database = new DatabaseSync(':memory:');
-    database.exec(`
-        CREATE TABLE session (
-            time_created INTEGER NOT NULL,
-            model TEXT,
-            tokens_input INTEGER NOT NULL,
-            tokens_output INTEGER NOT NULL,
-            tokens_cache_read INTEGER NOT NULL,
-            tokens_cache_write INTEGER NOT NULL
-        )
-    `);
-
+function createOpencodeFixtureDatabase(table: 'session' | 'session_v2' = 'session'): DatabaseSync {
     const rows: OpencodeFixtureRow[] = [
         createOpencodeFixtureRow({ day: 1, model: 'plain-model', inputTokens: 100, outputTokens: 10, cacheReadTokens: 1, cacheWriteTokens: 1 }),
-        createOpencodeFixtureRow({ day: 2, model: JSON.stringify({ id: 'gpt-5.5' }), inputTokens: 10, outputTokens: 2, cacheReadTokens: 3, cacheWriteTokens: 4 }),
+        createOpencodeFixtureRow({ day: 2, model: JSON.stringify({ id: 'gpt-5.5', providerID: 'openai' }), inputTokens: 10, outputTokens: 2, cacheReadTokens: 3, cacheWriteTokens: 4 }),
         createOpencodeFixtureRow({ day: 2, model: 'gpt-5.5', inputTokens: 5, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 6 }),
         createOpencodeFixtureRow({ day: 2, model: '', inputTokens: 999, outputTokens: 999, cacheReadTokens: 999, cacheWriteTokens: 999 }),
         createOpencodeFixtureRow({ day: 2, model: null, inputTokens: 999, outputTokens: 999, cacheReadTokens: 999, cacheWriteTokens: 999 }),
         createOpencodeFixtureRow({ day: 2, model: 'zero-model', inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 })
     ];
 
-    const insert = database.prepare(`
-        INSERT INTO session (
-            time_created,
-            model,
-            tokens_input,
-            tokens_output,
-            tokens_cache_read,
-            tokens_cache_write
-        ) VALUES (?, ?, ?, ?, ?, ?)
-    `);
+    return createOpencodeTables({ [table]: rows });
+}
 
-    for (const row of rows) {
-        insert.run(row.timeCreated, row.model, row.inputTokens, row.outputTokens, row.cacheReadTokens, row.cacheWriteTokens);
+function createOpencodeTables(tables: Partial<Record<'session' | 'session_v2', OpencodeFixtureRow[]>>): DatabaseSync {
+    const database = new DatabaseSync(':memory:');
+    for (const [table, rows] of Object.entries(tables)) {
+        database.exec(`
+            CREATE TABLE ${table} (
+                id TEXT PRIMARY KEY,
+                time_created INTEGER NOT NULL,
+                model TEXT,
+                tokens_input INTEGER NOT NULL,
+                tokens_output INTEGER NOT NULL,
+                tokens_cache_read INTEGER NOT NULL,
+                tokens_cache_write INTEGER NOT NULL
+            )
+        `);
+        const insert = database.prepare(`
+            INSERT INTO ${table} (
+                id, time_created, model, tokens_input, tokens_output, tokens_cache_read, tokens_cache_write
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        `);
+        rows.forEach((row, index) => {
+            insert.run(row.id ?? `${table}-${index}`, row.timeCreated, row.model, row.inputTokens, row.outputTokens, row.cacheReadTokens, row.cacheWriteTokens);
+        });
     }
 
     return database;
@@ -800,6 +906,7 @@ function createOpencodeFixtureDatabase(): DatabaseSync {
 
 function createOpencodeFixtureRow(row: Omit<OpencodeFixtureRow, 'timeCreated'> & { day: number }): OpencodeFixtureRow {
     return {
+        id: row.id,
         timeCreated: new Date(2026, 5, row.day, 12, 0, 0, 0).getTime(),
         model: row.model,
         inputTokens: row.inputTokens,

@@ -45,7 +45,7 @@ export class OpencodeTokenUsageAdapter implements LoadTokenUsageOutPort {
 
         try {
             database = this.openDatabase(resolvedDbPath);
-            const statement = database.prepare(this.createQuery(range));
+            const statement = database.prepare(this.createQuery(database, range));
 
             const rows = range === undefined
                 ? statement.all() as unknown as OpencodeSessionRow[]
@@ -60,7 +60,27 @@ export class OpencodeTokenUsageAdapter implements LoadTokenUsageOutPort {
         }
     }
 
-    private createQuery(range?: TimeRange): string {
+    private createQuery(database: DatabaseSync, range?: TimeRange): string {
+        const tables = database.prepare(`
+            SELECT name FROM sqlite_master
+            WHERE type = 'table' AND name IN ('session', 'session_v2')
+        `).all() as unknown as { name: string }[];
+        const hasLegacy = tables.some((table) => table.name === 'session');
+        const hasV2 = tables.some((table) => table.name === 'session_v2');
+
+        if (!hasLegacy && !hasV2) {
+            throw new Error('No supported opencode session summary table found (expected session or session_v2)');
+        }
+
+        const columns = `time_created, model, tokens_input, tokens_output, tokens_cache_read, tokens_cache_write`;
+        const source = hasLegacy && hasV2
+            ? `(
+                SELECT ${columns} FROM session_v2
+                UNION ALL
+                SELECT ${columns} FROM session
+                WHERE NOT EXISTS (SELECT 1 FROM session_v2 WHERE session_v2.id = session.id)
+            )`
+            : hasV2 ? 'session_v2' : 'session';
         const timeFilter = range === undefined
             ? ''
             : `AND time_created >= ?
@@ -74,7 +94,7 @@ export class OpencodeTokenUsageAdapter implements LoadTokenUsageOutPort {
                     tokens_output,
                     tokens_cache_read,
                     tokens_cache_write
-                FROM session
+                FROM ${source}
                 WHERE 1 = 1
                   ${timeFilter}
                   AND model IS NOT NULL
