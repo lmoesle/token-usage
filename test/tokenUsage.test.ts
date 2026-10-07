@@ -12,6 +12,7 @@ import { CodingAgentTokenUsageAdapter, CodingAgentUsageHandler } from '../src/ad
 import { VibeTokenUsageAdapter } from '../src/adapter/out/vibeTokenUsageAdapter';
 import { CodexTokenUsageAdapter } from '../src/adapter/out/codexTokenUsageAdapter';
 import { JunieTokenUsageAdapter } from '../src/adapter/out/junieTokenUsageAdapter';
+import { historicalTokenPrices, refreshedTokenPrices, unpricedModelIds } from './fixtures/refreshedTokenPrices';
 
 describe('token usage domain', () => {
     test('creates a local time range for today only', () => {
@@ -133,14 +134,14 @@ describe('token price config adapter', () => {
         const prices = await new TokenPriceConfigAdapter().loadTokenPrices();
 
         expect(prices['gpt-5.5']).toEqual({ input: 5, cached: 0.5, output: 30 });
-        expect(prices['gpt-5.6-sol']).toEqual({ input: 5, cached: 0.5, output: 30 });
+        expect(prices['gpt-5.6-sol']).toEqual({ input: 4, cached: 0.4, output: 20 });
         expect(prices['gpt-5.6-terra']).toEqual({ input: 2, cached: 0.2, output: 12 });
         expect(prices['gpt-5.6-luna']).toEqual({ input: 0.2, cached: 0.02, output: 1.2 });
-        expect(prices['gpt-6-luna']).toEqual({ input: 0.1, cached: 0.125, output: 0.5 });
+        expect(prices['gpt-6-luna']).toEqual({ input: 0.1, cached: 0.01, output: 0.5 });
         expect(prices['gpt-6-sol']).toEqual({ input: 2, cached: 0.2, output: 10 });
         expect(prices['gpt-6.1-sol']).toEqual({ input: 2, cached: 0.1, output: 10 });
         expect(prices['claude-sonnet-4-5']).toEqual({ input: 3, cached: 0.3, output: 15 });
-        expect(prices['deepseek-v4-flash']).toEqual({ input: 0.14, cached: 0.03, output: 0.28 });
+        expect(prices['deepseek-v4-flash']).toEqual({ input: 0.14, cached: 0.028, output: 0.28 });
         expect(prices['gemini-3-pro']).toEqual({ input: 2, cached: 0.2, output: 12 });
         expect(prices['glm-5']).toEqual({ input: 1, cached: 0.2, output: 3.2 });
         expect(prices['devstral-medium-latest']).toEqual({ input: 0.4, cached: 0, output: 2 });
@@ -149,11 +150,14 @@ describe('token price config adapter', () => {
         expect(prices['minimax-m2.5']).toEqual({ input: 0.3, cached: 0.06, output: 1.2 });
         expect(prices['open-mixtral-8x22b']).toEqual({ input: 2, cached: 0, output: 6 });
         expect(prices['qwen3.6-plus']).toEqual({ input: 0.5, cached: 0.05, output: 3 });
-        expect(Object.keys(prices).length).toBeGreaterThanOrEqual(160);
+        expect(Object.keys(prices)).toHaveLength(299);
+        expect(Object.keys(prices)).toEqual(Object.keys(prices).sort());
         for (const price of Object.values(prices)) {
-            expect(typeof price.input).toBe('number');
-            expect(typeof price.cached).toBe('number');
-            expect(typeof price.output).toBe('number');
+            expect(Object.keys(price)).toEqual(['input', 'cached', 'output']);
+            for (const rate of Object.values(price)) {
+                expect(Number.isFinite(rate)).toBe(true);
+                expect(rate).toBeGreaterThanOrEqual(0);
+            }
         }
     });
 
@@ -164,7 +168,7 @@ describe('token price config adapter', () => {
         ['claude-opus-5-5', 4, 0.2, 20],
         ['claude-sonnet-5', 2, 0.2, 10],
         ['deepseek-v4-flash-vision-exp', 0.14, 0.028, 0.28],
-        ['deepseek-v4-pro', 1.74, 0.145, 3.48],
+        ['deepseek-v4-pro', 1.74, 0.145, 3.84],
         ['deepseek-v4.1-flash', 0.3, 0.006, 1.2],
         ['gemini-3.5-flash-lite', 0.3, 0.03, 2.5],
         ['gemini-3.6-flash', 1.5, 0.15, 7.5],
@@ -173,9 +177,9 @@ describe('token price config adapter', () => {
         ['glm-5.2', 1.4, 0.26, 4.4],
         ['glm-5.3', 1.4, 0.26, 4.4],
         ['glm-5.3-flash', 0.15, 0.03, 0.5],
-        ['grok-4.5', 4, 0.6, 12],
-        ['grok-4.6', 4, 1, 12],
-        ['grok-4.7', 4, 1, 12],
+        ['grok-4.5', 2, 0.3, 6],
+        ['grok-4.6', 2, 0.5, 6],
+        ['grok-4.7', 2, 0.5, 6],
         ['jev-1.13', 0.042, 0, 0],
         ['jev-1.13-free', 0, 0, 0],
         ['kimi-k2.7-code', 0.95, 0.19, 4],
@@ -201,6 +205,50 @@ describe('token price config adapter', () => {
         expect(prices[model]).toEqual({ input, cached, output });
     });
 
+    test.each(refreshedTokenPrices)('loads refreshed %s prices from the six-provider capture', async (model, input, cached, output) => {
+        const prices = await new TokenPriceConfigAdapter().loadTokenPrices();
+
+        expect(Object.hasOwn(prices, model)).toBe(true);
+        expect(prices[model]).toEqual({ input, cached, output });
+    });
+
+    test.each(historicalTokenPrices)('retains historical %s prices', async (model, input, cached, output) => {
+        const prices = await new TokenPriceConfigAdapter().loadTokenPrices();
+
+        expect(prices[model]).toEqual({ input, cached, output });
+    });
+
+    test.each([
+        ['gpt-5', 1.07, 0.107, 8.5],
+        ['gpt-5.1', 1.07, 0.107, 8.5],
+        ['gpt-5.4-pro', 30, 0, 180],
+        ['gpt-5.5-pro', 30, 0, 180],
+        ['gpt-5.6-terra', 2, 0.2, 12],
+        ['gemini-3.6-flash', 1.5, 0.15, 7.5],
+        ['gemini-3.7-flash', 1.5, 0.15, 7.5],
+        ['gemini-3.8-flash', 1.5, 0.15, 7.5],
+        ['glm-5', 1, 0.2, 3.2],
+        ['minimax-m2.5', 0.3, 0.06, 1.2],
+        ['muse-spark-1.2', 1.25, 0.15, 4.25],
+        ['muse-spark-1.3', 1.25, 0.15, 4.25]
+    ])('preserves the existing published provider choice for %s', async (model, input, cached, output) => {
+        const prices = await new TokenPriceConfigAdapter().loadTokenPrices();
+
+        expect(prices[model]).toEqual({ input, cached, output });
+    });
+
+    test('distinguishes explicit free prices from missing source prices and unknown models', async () => {
+        const prices = await new TokenPriceConfigAdapter().loadTokenPrices();
+
+        for (const model of ['exo-free', 'fledge-alpha-free', 'ling-3.1-flash-free']) {
+            expect(Object.hasOwn(prices, model)).toBe(true);
+            expect(prices[model]).toEqual({ input: 0, cached: 0, output: 0 });
+        }
+        for (const model of [...unpricedModelIds, 'unknown-model']) {
+            expect(Object.hasOwn(prices, model)).toBe(false);
+        }
+    });
+
     test('does not define duplicate model IDs in the raw price config', async () => {
         const file = path.join(__dirname, '../src/adapter/out/tokenPrices.json');
         const source = ts.parseJsonText(file, await fs.readFile(file, 'utf8'));
@@ -220,12 +268,12 @@ describe('token price config adapter', () => {
     });
 
     test.each([
-        ['gpt-6-luna', 0.725, 0.125],
+        ['gpt-6-luna', 0.61, 0.01],
         ['gpt-6-sol', 12.2, 0.2],
         ['gpt-6.1-sol', 12.1, 0.1],
-        ['grok-4.5', 16.6, 0.6],
-        ['grok-4.6', 17, 1],
-        ['grok-4.7', 17, 1]
+        ['grok-4.5', 8.3, 0.3],
+        ['grok-4.6', 8.5, 0.5],
+        ['grok-4.7', 8.5, 0.5]
     ])('calculates %s costs from configured prices', async (model, combinedCost, cachedCost) => {
         const prices = await new TokenPriceConfigAdapter().loadTokenPrices();
         const measurement = { date: '2026-05-26', agent: 'opencode', model, inputTokens: 1_000_000, cachedTokens: 1_000_000, outputTokens: 1_000_000 };
@@ -235,6 +283,54 @@ describe('token price config adapter', () => {
 
         expect(report.entries[0].cost).toBeCloseTo(combinedCost);
         expect(cachedOnlyReport.entries[0].cost).toBeCloseTo(cachedCost);
+    });
+
+    test.each([
+        ['gpt-6-luna', 0.1, 0.01, 0.5],
+        ['gpt-5.6-sol', 4, 0.4, 20],
+        ['gpt-6.1-sol-fast', 4, 0.2, 20],
+        ['gpt-6.1-sol-pro', 2, 0.1, 10],
+        ['gpt-6-astra-ultrafast', 60, 6, 300],
+        ['gpt-5-flex', 0.625, 0.0625, 5],
+        ['mistral-large-4', 0.68, 0.07, 2.09],
+        ['mistral-small-latest', 0.15, 0.015, 0.6],
+        ['mistral-medium-latest', 1.5, 0.15, 7.5],
+        ['codestral-latest', 0.3, 0.03, 0.9],
+        ['hy3', 0.14, 0.035, 0.58],
+        ['mimo-v2.6-pro', 0.435, 0.003625, 0.87],
+        ['exo-free', 0, 0, 0],
+        ['voxtral-mini-latest', 0, 0, 0],
+        ['unknown-model', 0, 0, 0]
+    ])('charges input, cache-read and output independently for %s', async (model, input, cached, output) => {
+        const prices = await new TokenPriceConfigAdapter().loadTokenPrices();
+        const measurement = { date: '2026-10-07', agent: 'opencode', model, inputTokens: 0, cachedTokens: 0, outputTokens: 0 };
+
+        for (const [tokens, expected] of [
+            [{ inputTokens: 1_000_000 }, input],
+            [{ cachedTokens: 1_000_000 }, cached],
+            [{ outputTokens: 1_000_000 }, output]
+        ] as const) {
+            const report = createTokenUsageReport('daily', [{ ...measurement, ...tokens }], undefined, prices);
+
+            expect(report.entries[0].cost).toBeCloseTo(expected, 8);
+            expect(report.total.cost).toBeCloseTo(expected, 8);
+        }
+    });
+
+    test('uses mode prices rather than collapsing premium and inherited modes to their base ID', async () => {
+        const prices = await new TokenPriceConfigAdapter().loadTokenPrices();
+        const measurements = ['gpt-6.1-sol', 'gpt-6.1-sol-fast', 'gpt-6.1-sol-pro'].map((model) => ({
+            date: '2026-10-07', agent: 'opencode', model, inputTokens: 1_000_000, cachedTokens: 1_000_000, outputTokens: 1_000_000
+        }));
+
+        const report = createTokenUsageReport('daily', measurements, undefined, prices);
+
+        expect(report.entries.map((entry) => ({ model: entry.model, cost: entry.cost }))).toEqual([
+            { model: 'gpt-6.1-sol', cost: 12.1 },
+            { model: 'gpt-6.1-sol-fast', cost: 24.2 },
+            { model: 'gpt-6.1-sol-pro', cost: 12.1 }
+        ]);
+        expect(report.total.cost).toBeCloseTo(48.4);
     });
 });
 
