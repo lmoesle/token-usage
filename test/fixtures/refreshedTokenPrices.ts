@@ -1,152 +1,87 @@
-// Sanitized models.dev/OpenCode 1.18.35 refresh captured 2026-10-07; no runtime network access.
-// Six providers: Zen, OpenAI, Anthropic, Google, Mistral, Go. USD per million text tokens.
-// Preserve a published existing provider choice; otherwise prefer Zen, direct provider, then Go.
-// Mode overrides are explicit; modes without overrides inherit their base cost. Cached = cache-read.
-export const refreshedTokenPrices: [string, number, number, number][] = [
-    ['claude-opus-4-8-fast', 10, 1, 50],
-    ['claude-opus-5-5-fast', 8, 0.4, 40],
-    ['claude-opus-5-fast', 10, 1, 50],
-    ['claude-sonnet-5-5', 2, 0.2, 10],
-    ['codestral-latest', 0.3, 0.03, 0.9],
-    ['deep-research-max-preview-04-2026', 2, 0.2, 12],
-    ['deep-research-preview-04-2026', 2, 0.2, 12],
-    ['deepseek-v4-flash', 0.14, 0.028, 0.28],
-    ['deepseek-v4-pro', 1.74, 0.145, 3.84],
-    ['devstral-latest', 0.4, 0, 2],
-    ['exo-free', 0, 0, 0],
-    ['fledge-alpha-free', 0, 0, 0],
-    ['gemini-2.5-computer-use-preview-10-2025', 1.25, 0, 10],
-    ['gemini-3-pro-image', 2, 0, 120],
-    ['gemini-3-pro-image-preview', 2, 0, 120],
-    ['gemini-3.1-flash-image', 0.5, 0, 60],
-    ['gemini-3.1-flash-lite-image', 0.25, 0, 30],
-    ['gemini-3.1-flash-live-preview', 0.75, 0, 4.5],
-    ['gemini-3.1-flash-tts-preview', 1, 0, 20],
-    ['gemini-3.5-live-translate-preview', 3.5, 0, 21],
-    ['gemini-embedding-2', 0.2, 0, 0],
-    ['gemini-flash-latest', 0.75, 0.075, 3.75],
-    ['gemini-flash-lite-latest', 0.3, 0.03, 2.5],
-    ['gemini-omni-flash-preview', 1.5, 0, 17.5],
-    ['gpt-4.1-fast', 3.5, 0.875, 14],
-    ['gpt-4.1-mini-fast', 0.7, 0.175, 2.8],
-    ['gpt-4.1-nano-fast', 0.2, 0.05, 0.8],
-    ['gpt-4o-2024-05-13-fast', 8.75, 0, 26.25],
-    ['gpt-4o-fast', 4.25, 2.125, 17],
-    ['gpt-4o-mini-fast', 0.25, 0.125, 1],
-    ['gpt-5-fast', 2.5, 0.25, 20],
-    ['gpt-5-flex', 0.625, 0.0625, 5],
-    ['gpt-5-mini-fast', 0.45, 0.045, 3.6],
-    ['gpt-5-mini-flex', 0.125, 0.0125, 1],
-    ['gpt-5-nano-flex', 0.025, 0.0025, 0.2],
-    ['gpt-5.1-fast', 2.5, 0.25, 20],
-    ['gpt-5.1-flex', 0.625, 0.0625, 5],
-    ['gpt-5.2-fast', 3.5, 0.35, 28],
-    ['gpt-5.2-flex', 0.875, 0.0875, 7],
-    ['gpt-5.3-codex-fast', 3.5, 0.35, 28],
-    ['gpt-5.4-fast', 5, 0.5, 30],
-    ['gpt-5.4-mini-fast', 1.5, 0.15, 9],
-    ['gpt-5.4-mini-flex', 0.375, 0.0375, 2.25],
-    ['gpt-5.4-nano-flex', 0.1, 0.01, 0.625],
-    ['gpt-5.5-fast', 12.5, 1.25, 75],
-    ['gpt-5.6', 4, 0.4, 20],
-    ['gpt-5.6-fast', 8, 0.8, 40],
-    ['gpt-5.6-luna-pro', 0.2, 0.02, 1.2],
-    ['gpt-5.6-pro', 4, 0.4, 20],
-    ['gpt-5.6-sol', 4, 0.4, 20],
-    ['gpt-5.6-sol-pro', 4, 0.4, 20],
-    ['gpt-5.6-terra-pro', 2, 0.2, 12],
-    ['gpt-6-astra-pro', 10, 1, 50],
-    ['gpt-6-astra-ultrafast', 60, 6, 300],
-    ['gpt-6-luna', 0.1, 0.01, 0.5],
-    ['gpt-6-luna-fast', 0.2, 0.02, 1],
-    ['gpt-6-luna-pro', 0.1, 0.01, 0.5],
-    ['gpt-6-sol-fast', 4, 0.4, 20],
-    ['gpt-6-sol-pro', 2, 0.2, 10],
-    ['gpt-6.1-sol-fast', 4, 0.2, 20],
-    ['gpt-6.1-sol-pro', 2, 0.1, 10],
-    ['gpt-daybreak-blue-latest', 4, 0.4, 20],
-    ['gpt-daybreak-red-latest', 12.5, 1.25, 75],
-    ['gpt-image-2', 5, 1.25, 30],
-    ['gpt-realtime-2.1', 4, 0.4, 24],
-    ['grok-4.5', 2, 0.3, 6],
-    ['grok-4.6', 2, 0.5, 6],
-    ['grok-4.7', 2, 0.5, 6],
-    ['hy3', 0.14, 0.035, 0.58],
-    ['hy3-free', 0, 0, 0],
-    ['hy4-preview', 0.834, 0.042, 2.501],
-    ['laguna-s-2.1-free', 0, 0, 0],
-    ['ling-3.0-flash-free', 0, 0, 0],
-    ['ling-3.0-tiny-free', 0, 0, 0],
-    ['ling-3.1-flash-free', 0, 0, 0],
-    ['longcat-2.0', 0.3, 0.006, 1.2],
-    ['longcat-2.0-free', 0, 0, 0],
-    ['lyria-3-clip-preview', 0, 0, 0],
-    ['lyria-3-pro-preview', 0, 0, 0],
-    ['mimo-v2.5', 0.14, 0.0028, 0.28],
-    ['mimo-v2.5-pro', 0.435, 0.003625, 0.87],
-    ['mimo-v2.6-flash', 0.14, 0.0028, 0.28],
-    ['mimo-v2.6-pro', 0.435, 0.003625, 0.87],
-    ['ministral-3b-latest', 0.04, 0, 0.04],
-    ['ministral-8b-latest', 0.1, 0, 0.1],
-    ['mistral-large-2512', 0.5, 0.05, 1.5],
-    ['mistral-large-4', 0.68, 0.07, 2.09],
-    ['mistral-large-latest', 0.5, 0.05, 1.5],
-    ['mistral-medium-2604', 1.5, 0.15, 7.5],
-    ['mistral-medium-latest', 1.5, 0.15, 7.5],
-    ['mistral-small-2603', 0.15, 0.015, 0.6],
-    ['mistral-small-latest', 0.15, 0.015, 0.6],
-    ['muse-spark-1.2-contributor', 0.1, 0.002, 0.2],
-    ['muse-spark-1.2-contributor-free', 0, 0, 0],
-    ['muse-spark-1.3-contributor', 0.1, 0.002, 0.2],
-    ['north-mini-code-free', 0, 0, 0],
-    ['o3-fast', 3.5, 0.875, 14],
-    ['o3-flex', 1, 0.25, 4],
-    ['o4-mini-fast', 2, 0.5, 8],
-    ['o4-mini-flex', 0.55, 0.138, 2.2],
-    ['space-bunny', 0.15, 0.03, 0.6],
-    ['voxtral-small-latest', 0.1, 0, 0.3],
-    ['x-preview-f-free', 0, 0, 0],
-    ['zai-glm-5-2', 1.4, 0.14, 4.4],
-    ['zai-glm-5-3', 1.4, 0.14, 4.4]
-];
+import source from './modelsDevPrices.json';
+import previous from './previousTokenPrices.json';
+import previousProviders from './previousTokenPriceProviders.json';
 
-// Existing historical aliases absent from the priced six-provider source must remain unchanged.
-export const historicalTokenPrices: [string, number, number, number][] = [
-    ['chat-latest', 5, 0.5, 30],
-    ['claude-3-5-haiku-20241022', 0.8, 0.08, 4],
-    ['claude-3-5-haiku-latest', 0.8, 0.08, 4],
-    ['claude-3-5-sonnet-20240620', 3, 0.3, 15],
-    ['claude-3-5-sonnet-20241022', 3, 0.3, 15],
-    ['claude-3-7-sonnet-20250219', 3, 0.3, 15],
-    ['claude-3-haiku-20240307', 0.25, 0.03, 1.25],
-    ['claude-3-opus-20240229', 15, 1.5, 75],
-    ['claude-3-sonnet-20240229', 3, 0.3, 15],
-    ['claude-opus-4-0', 15, 1.5, 75],
-    ['claude-opus-4-1-20250805', 15, 1.5, 75],
-    ['claude-opus-4-20250514', 15, 1.5, 75],
-    ['claude-sonnet-4-0', 3, 0.3, 15],
-    ['claude-sonnet-4-20250514', 3, 0.3, 15],
-    ['devstral-small-latest', 0.1, 0, 0.3],
-    ['gemini-2.0-flash', 0.1, 0.025, 0.4],
-    ['gemini-2.0-flash-lite', 0.075, 0, 0.3],
-    ['gemini-3-pro-preview', 2, 0.2, 12],
-    ['gpt-5-chat-latest', 1.25, 0.125, 10],
-    ['gpt-5.1-chat-latest', 1.25, 0.125, 10],
-    ['jev-1.13', 0.042, 0, 0],
-    ['jev-1.13-free', 0, 0, 0],
-    ['labs-mistral-small-creative', 0.1, 0, 0.3],
-    ['magistral-small', 0.5, 0, 1.5],
-    ['magistral-small-latest', 0.5, 0, 1.5],
-    ['ministral-14b-latest', 0.2, 0, 0.2],
-    ['o1-mini', 1.1, 0.55, 4.4],
-    ['o1-preview', 15, 7.5, 60],
-    ['o3-deep-research', 10, 2.5, 40],
-    ['o4-mini-deep-research', 2, 0.5, 8]
-];
+// https://models.dev/api.json, retrieved 2026-10-26 (232 providers, 8,936 base models).
+// Raw response SHA-256: e8819dc5eceb8dfeea7212725b1f1dc933ec34e74b661100f830c8979283a159.
+// modelsDevPrices.json retains only public provider/ID/canonical ID, base costs and mode costs.
+// previousTokenPrices.json is the pre-refresh 299-entry config, NOT generated from the new output.
+// USD/million text tokens; cache_read -> cached (omitted cache_read defaults to zero).
+// Missing input/output is unpriced, not free. Tiers, cache writes and non-text rates are out of scope.
+// Modes use ID-mode, inherit base costs unless overridden; explicit zeros remain zero.
+// previousTokenPriceProviders.json pins all 299 previous IDs to their inferred provider.
+// Mistral-family aliases use Mistral, dated Claude aliases Anthropic, GPT chat aliases OpenAI.
+// Other prior six-provider IDs use their prior Zen/direct/Go lane. For ambiguous shared
+// equal-price IDs, pin Zen (prior priority), except explicitly preserved OpenAI pro models.
+// Historical chat-latest/jev/qwen3.7-max are inferred Zen aliases. These are continuity
+// assumptions, not claims that old records contained provider metadata. Pins NEVER depend
+// on current numeric equality. Missing/unpriced pinned sources retain historical prices.
+// New IDs: Zen > originating provider > Go > other providers, then lexical provider ID.
+// Originating providers are canonical-ID namespaces; a provider's own model/alias or
+// a non-aliased model in that namespace is direct. OpenAI/Anthropic/Google/Mistral also
+// publish older models without canonical metadata.
+interface Cost { input?: number; output?: number; cache_read?: number }
+interface SourceModel {
+    provider: string;
+    id: string;
+    canonical?: string;
+    cost: Cost;
+    modes?: Record<string, Cost | null>;
+}
+export interface Candidate { provider: string; direct: boolean; rates: [number, number, number] }
 
-export const unpricedModelIds = [
-    'chatgpt-image-latest', 'gpt-image-1', 'gpt-image-1-mini', 'gpt-image-1.5',
-    'gemma-4-31b-it', 'gemma-4-26b-a4b-it', 'veo-3.1-lite-generate-preview',
-    'veo-3.1-fast-generate-preview', 'veo-3.1-generate-preview',
-    'voxtral-mini-tts-latest', 'voxtral-mini-latest'
-];
+// Canonical publisher namespaces which differ from models.dev provider IDs.
+const originProviders: Record<string, string[]> = {
+    amazon: ['amazon-bedrock'],
+    ibm: ['watsonx'],
+    'bytedance-seed': ['volcengine'],
+    tencent: ['tencent-tokenhub'],
+    inclusionai: ['bailing'],
+    'arcee-ai': ['arcee'],
+    fireworks: ['fireworks-ai'],
+    'inference-net': ['inference'],
+    zhipuai: ['zhipuai', 'zai']
+};
+
+export const sourceModels: SourceModel[] = source;
+const origins = new Set(['openai', 'anthropic', 'google', 'mistral', ...sourceModels
+    .flatMap((model) => model.canonical ? [model.canonical.split('/')[0]] : [])]);
+export const priceCandidates = new Map<string, Candidate[]>();
+const sourceIds = new Set<string>();
+for (const model of sourceModels) {
+    const variants: [string, Cost][] = [[model.id, model.cost], ...Object.entries(model.modes ?? {})
+        .map(([mode, override]): [string, Cost] => [`${model.id}-${mode}`, { ...model.cost, ...override }])];
+    for (const [id, cost] of variants) {
+        sourceIds.add(id);
+        if (cost.input === undefined || cost.output === undefined) continue;
+        const origin = model.canonical?.split('/')[0];
+        const direct = origin
+            ? (originProviders[origin] ?? [origin]).includes(model.provider)
+            : origins.has(model.provider);
+        const candidates = priceCandidates.get(id) ?? [];
+        candidates.push({ provider: model.provider, direct, rates: [cost.input, cost.cache_read ?? 0, cost.output] });
+        priceCandidates.set(id, candidates);
+    }
+}
+
+export const previousTokenPrices = previous as [string, number, number, number][];
+export const previousTokenPriceProviders: Record<string, string> = previousProviders;
+const previousById = new Map(previousTokenPrices.map(([id, ...rates]) => [id, rates]));
+function rank(candidate: Candidate): number {
+    if (candidate.provider === 'opencode') return 0;
+    if (candidate.direct) return 1;
+    if (candidate.provider === 'opencode-go') return 2;
+    return 3;
+}
+export function selectPriceCandidate(candidates: Candidate[], pinnedProvider?: string): Candidate | undefined {
+    if (pinnedProvider !== undefined) return candidates.find((candidate) => candidate.provider === pinnedProvider);
+    return [...candidates].sort((a, b) => rank(a) - rank(b) || (a.provider < b.provider ? -1 : a.provider > b.provider ? 1 : 0))[0];
+}
+export const refreshedTokenPrices: [string, number, number, number][] = [...priceCandidates].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)
+    .flatMap(([id, candidates]) => {
+        const chosen = selectPriceCandidate(candidates, previousTokenPriceProviders[id]);
+        return chosen ? [[id, ...chosen.rates] as [string, number, number, number]] : [];
+    });
+export const historicalTokenPrices = previousTokenPrices.filter(([id]) =>
+    !selectPriceCandidate(priceCandidates.get(id) ?? [], previousTokenPriceProviders[id]));
+export const unpricedModelIds = [...sourceIds].filter((id) => !priceCandidates.has(id) && !previousById.has(id));
