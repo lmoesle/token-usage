@@ -12,7 +12,7 @@ import { CodingAgentTokenUsageAdapter, CodingAgentUsageHandler } from '../src/ad
 import { VibeTokenUsageAdapter } from '../src/adapter/out/vibeTokenUsageAdapter';
 import { CodexTokenUsageAdapter } from '../src/adapter/out/codexTokenUsageAdapter';
 import { JunieTokenUsageAdapter } from '../src/adapter/out/junieTokenUsageAdapter';
-import { historicalTokenPrices, refreshedTokenPrices, unpricedModelIds } from './fixtures/refreshedTokenPrices';
+import { historicalTokenPrices, previousTokenPriceProviders, previousTokenPrices, priceCandidates, refreshedTokenPrices, selectPriceCandidate, sourceModels, unpricedModelIds } from './fixtures/refreshedTokenPrices';
 
 describe('token usage domain', () => {
     test('creates a local time range for today only', () => {
@@ -146,11 +146,11 @@ describe('token price config adapter', () => {
         expect(prices['glm-5']).toEqual({ input: 1, cached: 0.2, output: 3.2 });
         expect(prices['devstral-medium-latest']).toEqual({ input: 0.4, cached: 0, output: 2 });
         expect(prices['gpt-5.3-codex-spark']).toEqual({ input: 1.75, cached: 0.175, output: 14 });
-        expect(prices['kimi-k2.5']).toEqual({ input: 0.6, cached: 0.08, output: 3 });
+        expect(prices['kimi-k2.5']).toEqual({ input: 0.6, cached: 0.1, output: 3 });
         expect(prices['minimax-m2.5']).toEqual({ input: 0.3, cached: 0.06, output: 1.2 });
         expect(prices['open-mixtral-8x22b']).toEqual({ input: 2, cached: 0, output: 6 });
         expect(prices['qwen3.6-plus']).toEqual({ input: 0.5, cached: 0.05, output: 3 });
-        expect(Object.keys(prices)).toHaveLength(299);
+        expect(Object.keys(prices)).toHaveLength(refreshedTokenPrices.length + historicalTokenPrices.length);
         expect(Object.keys(prices)).toEqual(Object.keys(prices).sort());
         for (const price of Object.values(prices)) {
             expect(Object.keys(price)).toEqual(['input', 'cached', 'output']);
@@ -168,7 +168,7 @@ describe('token price config adapter', () => {
         ['claude-opus-5-5', 4, 0.2, 20],
         ['claude-sonnet-5', 2, 0.2, 10],
         ['deepseek-v4-flash-vision-exp', 0.14, 0.028, 0.28],
-        ['deepseek-v4-pro', 1.74, 0.145, 3.84],
+        ['deepseek-v4-pro', 1.74, 0.145, 3.48],
         ['deepseek-v4.1-flash', 0.3, 0.006, 1.2],
         ['gemini-3.5-flash-lite', 0.3, 0.03, 2.5],
         ['gemini-3.6-flash', 1.5, 0.15, 7.5],
@@ -205,10 +205,63 @@ describe('token price config adapter', () => {
         expect(prices[model]).toEqual({ input, cached, output });
     });
 
-    test.each(refreshedTokenPrices)('loads refreshed %s prices from the six-provider capture', async (model, input, cached, output) => {
+    test('covers every published priced model and mode across the complete public catalog', async () => {
         const prices = await new TokenPriceConfigAdapter().loadTokenPrices();
 
-        expect(Object.hasOwn(prices, model)).toBe(true);
+        expect(new Set(sourceModels.map((model) => model.provider)).size).toBe(232);
+        expect(sourceModels).toHaveLength(8936);
+        expect(refreshedTokenPrices).toHaveLength(3900);
+        expect(historicalTokenPrices).toHaveLength(42);
+        expect(unpricedModelIds).toHaveLength(269);
+        expect(Object.keys(previousTokenPriceProviders)).toEqual(previousTokenPrices.map(([id]) => id));
+        expect(Object.keys(prices).sort()).toEqual([...new Set([...priceCandidates.keys(), ...historicalTokenPrices.map(([id]) => id)])].sort());
+        for (const [model, input, cached, output] of refreshedTokenPrices) {
+            expect({ model, price: prices[model] }).toEqual({ model, price: { input, cached, output } });
+        }
+    });
+
+    test('refreshes the pinned Zen provider even when a reseller retains its old tuple', () => {
+        const reseller = { provider: 'reseller', direct: false, rates: [1, 0.1, 2] as [number, number, number] };
+        const zen = { provider: 'opencode', direct: false, rates: [2, 0.2, 4] as [number, number, number] };
+
+        expect(selectPriceCandidate([reseller, zen], 'opencode')).toEqual(zen);
+        expect(selectPriceCandidate([reseller], 'opencode')).toBeUndefined();
+        expect(selectPriceCandidate([reseller, zen])).toEqual(zen);
+    });
+
+    test('recognizes Amazon Bedrock as the direct provider for the amazon publisher namespace', () => {
+        const bedrock = priceCandidates.get('amazon.nova-pro-v1:0')?.find((candidate) => candidate.provider === 'amazon-bedrock');
+
+        expect(bedrock?.direct).toBe(true);
+        expect(selectPriceCandidate([
+            { provider: 'aaa-reseller', direct: false, rates: [0, 0, 0] },
+            bedrock!
+        ])).toEqual(bedrock);
+    });
+
+    test.each([
+        ['mistral-nemo', 0.15, 0, 0.15],
+        ['open-mistral-nemo', 0.15, 0, 0.15],
+        ['claude-3-7-sonnet-20250219', 3, 0.3, 15],
+        ['claude-opus-4-20250514', 15, 1.5, 75],
+        ['claude-sonnet-4-20250514', 3, 0.3, 15],
+        ['gpt-5.2-chat-latest', 1.75, 0.175, 14],
+        ['gpt-5.3-chat-latest', 1.75, 0.175, 14],
+        ['mistral-large-4', 1.36, 0.14, 4.18],
+        ['amazon.nova-pro-v1:0', 0.8, 0.2, 3.2],
+        ['deepseek-chat', 0.1, 0.05, 0.425],
+        ['meta-llama/llama-3.3-70b-instruct', 0.1, 0, 0.32],
+        ['qwen/qwen3-32b', 0.08, 0, 0.28],
+        ['grok-4-1-fast-reasoning', 0.2, 0, 0.5],
+        ['gpt-6.1-sol-ultrafast', 12, 0.6, 60],
+        ['claude-opus-4.8-fast', 10, 1, 50],
+        ['ministral-3b-latest', 0.1, 0.01, 0.1],
+        ['ministral-8b-latest', 0.15, 0.015, 0.15],
+        ['o4-mini-flex', 0.55, 0.1375, 2.2],
+        ['voxtral-small-latest', 0.1, 0, 0.4]
+    ])('loads cross-provider additions and changed published rates for %s', async (model, input, cached, output) => {
+        const prices = await new TokenPriceConfigAdapter().loadTokenPrices();
+
         expect(prices[model]).toEqual({ input, cached, output });
     });
 
@@ -292,7 +345,7 @@ describe('token price config adapter', () => {
         ['gpt-6.1-sol-pro', 2, 0.1, 10],
         ['gpt-6-astra-ultrafast', 60, 6, 300],
         ['gpt-5-flex', 0.625, 0.0625, 5],
-        ['mistral-large-4', 0.68, 0.07, 2.09],
+        ['mistral-large-4', 1.36, 0.14, 4.18],
         ['mistral-small-latest', 0.15, 0.015, 0.6],
         ['mistral-medium-latest', 1.5, 0.15, 7.5],
         ['codestral-latest', 0.3, 0.03, 0.9],
