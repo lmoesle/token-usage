@@ -99,7 +99,7 @@ export function createTokenUsageReport(
         .map((measurement) => ({
             ...measurement,
             totalTokens: measurement.inputTokens + measurement.outputTokens + measurement.cachedTokens,
-            cost: measurement.cost ?? calculateCost(measurement, tokenPrices[measurement.model])
+            cost: measurement.cost ?? calculateCost(measurement, resolveTokenPrice(measurement.model, tokenPrices))
         }))
         .sort((a, b) => {
             const dateCompare = a.date.localeCompare(b.date);
@@ -142,6 +142,16 @@ function calculateTotals(entries: TokenUsageEntry[]): TokenUsageTotals {
         totalTokens: 0,
         cost: 0
     });
+}
+
+function resolveTokenPrice(model: string, tokenPrices: TokenPrices): TokenPrice | undefined {
+    const exactPrice = tokenPrices[model];
+    if (exactPrice !== undefined) {
+        return exactPrice;
+    }
+
+    const majorVersion = /^(mistral-[a-z]+-\d+)(?:-\d+){1,2}$/.exec(model)?.[1];
+    return majorVersion === undefined ? undefined : tokenPrices[majorVersion];
 }
 
 function calculateCost(measurement: TokenUsageMeasurement, tokenPrice: TokenPrice | undefined): number {

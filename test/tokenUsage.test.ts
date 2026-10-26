@@ -67,6 +67,70 @@ describe('token usage domain', () => {
         expect(report.total.cost).toBe(35.5);
     });
 
+    test.each(['mistral-large-4-0', 'mistral-large-4-0-3'])(
+        'uses major-version prices for %s without changing the reported model', (model) => {
+            const measurement = { date: '2026-10-26', agent: 'vibe', model, inputTokens: 29_438, outputTokens: 9_620, cachedTokens: 139_104 };
+            const report = createTokenUsageReport('daily', [measurement], undefined, {
+                'mistral-large-4': { input: 1.36, cached: 0.14, output: 4.18 },
+                'mistral-large': { input: 10, cached: 10, output: 10 }
+            });
+
+            expect(report.entries[0]).toEqual({ ...measurement, totalTokens: 178_162, cost: expect.any(Number) });
+            expect(report.entries[0].cost).toBeCloseTo(0.09972184, 8);
+            expect(report.total.cost).toBeCloseTo(0.09972184, 8);
+        }
+    );
+
+    test('falls back directly to the Mistral major version rather than an intermediate minor version', () => {
+        const measurement = { date: '2026-10-26', agent: 'vibe', model: 'mistral-large-4-0-3', inputTokens: 1_000_000, outputTokens: 1_000_000, cachedTokens: 1_000_000 };
+        const prices = {
+            'mistral-large-4': { input: 1.36, cached: 0.14, output: 4.18 },
+            'mistral-large-4-0': { input: 2, cached: 0.2, output: 6 }
+        };
+
+        expect(createTokenUsageReport('daily', [measurement], undefined, prices).total.cost).toBeCloseTo(5.68);
+        expect(createTokenUsageReport('daily', [measurement], undefined, {
+            'mistral-large-4-0': prices['mistral-large-4-0']
+        }).total.cost).toBe(0);
+    });
+
+    test.each(['mistral-large-4-0', 'mistral-large-4-0-3'])(
+        'prefers exact prices for %s over major-version prices', (model) => {
+            const report = createTokenUsageReport('daily', [
+                { date: '2026-10-26', agent: 'vibe', model, inputTokens: 1_000_000, outputTokens: 1_000_000, cachedTokens: 1_000_000 }
+            ], undefined, {
+                'mistral-large-4': { input: 1.36, cached: 0.14, output: 4.18 },
+                [model]: { input: 2, cached: 0.2, output: 6 }
+            });
+
+            expect(report.total.cost).toBeCloseTo(8.2);
+        }
+    );
+
+    test.each(['unknown-model', 'claude-large-4-0-3', 'mistral-unknown-4-0-3', 'mistral-large-4-latest', 'mistral-large-4-0-3:free'])(
+        'does not infer prices for unrelated or unknown model %s', (model) => {
+            const report = createTokenUsageReport('daily', [
+                { date: '2026-10-26', agent: 'vibe', model, inputTokens: 1_000_000, outputTokens: 1_000_000, cachedTokens: 1_000_000 }
+            ], undefined, {
+                'mistral-large-4': { input: 1.36, cached: 0.14, output: 4.18 },
+                'claude-large-4': { input: 3, cached: 0.3, output: 15 }
+            });
+
+            expect(report.total.cost).toBe(0);
+        }
+    );
+
+    test.each([0, 1.5])('preserves explicit measurement cost %s instead of Mistral fallback pricing', (cost) => {
+        const report = createTokenUsageReport('daily', [
+            { date: '2026-10-26', agent: 'vibe', model: 'mistral-large-4-0-3', inputTokens: 29_438, outputTokens: 9_620, cachedTokens: 139_104, cost }
+        ], undefined, {
+            'mistral-large-4': { input: 1.36, cached: 0.14, output: 4.18 }
+        });
+
+        expect(report.entries[0].cost).toBe(cost);
+        expect(report.total.cost).toBe(cost);
+    });
+
     test('groups all-time usage by the selected period', () => {
         const measurements: TokenUsageMeasurement[] = [
             { date: '2026-05-31', agent: 'opencode', model: 'gpt-5.5', inputTokens: 10, outputTokens: 1, cachedTokens: 0 },
