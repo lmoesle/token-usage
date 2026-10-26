@@ -497,6 +497,98 @@ describe('opencode token usage adapter', () => {
 });
 
 describe('vibe token usage adapter', () => {
+    test.each(['projection_advanced', 'projection_delta'])('loads only the selected unified generation and cumulative %s replacements', async (type) => {
+        await withTempDirectory(async (root) => {
+            const directory = await createUnifiedVibeSession(root, 'session-a');
+            await fs.mkdir(path.join(directory, 'generations', '0000000000000002'));
+            await fs.writeFile(path.join(directory, 'generations', '0000000000000002', 'projection.json'), '{"ignored":true}');
+            await fs.writeFile(path.join(directory, 'journal', '0000000000000000.jsonl'), 'old invalid journal');
+            const session = unifiedVibeSession(178_162, 139_104, 9_620);
+            const payload = type === 'projection_advanced'
+                ? { watermark: 2, snapshot: { session } }
+                : { watermark: 2, delta: [{ op: 'set_envelope', state: { session } }] };
+            const records = [
+                { sequence: 11, type: 'core_input', payload: {} },
+                { sequence: 12, type: 'projection_advanced', payload: { watermark: 1, snapshot: { session: unifiedVibeSession(1_000, 100, 20) } } },
+                { sequence: 13, type, payload },
+                { sequence: 14, type, payload }
+            ].map((record) => JSON.stringify({ recovery_journal_record_version: 1, ...record }));
+            await fs.writeFile(path.join(directory, 'journal', '0000000000000011.jsonl'), records.join('\n') + '\n{"sequence":15');
+
+            expect(await new VibeTokenUsageAdapter(root).loadTokenUsage()).toEqual([{
+                date: '2026-06-02', agent: 'vibe', model: 'mistral-medium-3.5',
+                inputTokens: 29_438, cachedTokens: 139_104, outputTokens: 9_620
+            }]);
+        });
+    });
+
+    test('rejects symlinked generation files rather than reading outside the store', async () => {
+        await withTempDirectory(async (root) => {
+            const directory = await createUnifiedVibeSession(root, 'session-a');
+            const generation = path.join(directory, 'generations', '0000000000000001');
+            await fs.rename(generation, path.join(root, 'outside'));
+            await fs.symlink(path.join(root, 'outside'), generation);
+            await expect(new VibeTokenUsageAdapter(root).loadTokenUsage()).rejects.toThrow('linked unified store file');
+        });
+    });
+
+    test('ignores sessions without cumulative usage and partially published sessions', async () => {
+        await withTempDirectory(async (root) => {
+            await fs.mkdir(path.join(root, 'unified', 'not-published'), { recursive: true });
+            await createUnifiedVibeSession(root, 'session-a', '', { tokenUsage: null });
+            expect(await new VibeTokenUsageAdapter(root).loadTokenUsage()).toEqual([]);
+        });
+    });
+
+    test('uses the snapshot, unknown model and session start date without stored cost or context usage', async () => {
+        await withTempDirectory(async (root) => {
+            await createUnifiedVibeSession(root, 'session-a', '');
+            const adapter = new VibeTokenUsageAdapter(root);
+            expect(await adapter.loadTokenUsage()).toEqual([{
+                date: '2026-06-02', agent: 'vibe', model: 'unknown', inputTokens: 60, cachedTokens: 40, outputTokens: 20
+            }]);
+            expect(await adapter.loadTokenUsage({ start: new Date(2026, 5, 3), endExclusive: new Date(2026, 5, 4) })).toEqual([]);
+        });
+    });
+
+    test.each(['format', 'identity', 'reference', 'sequence', 'json', 'digest'])(
+        'rejects malformed unified %s rather than reporting misleading usage', async (fault) => {
+            await withTempDirectory(async (root) => {
+                const directory = await createUnifiedVibeSession(root, 'session-a');
+                const currentPath = path.join(directory, 'CURRENT');
+                const current = JSON.parse(await fs.readFile(currentPath, 'utf8'));
+                if (fault === 'format') current.store_format = 'unsupported';
+                if (fault === 'identity') current.session_id = 'another-session';
+                if (fault === 'reference') current.generation = '../../outside';
+                if (fault === 'digest') current.manifest_sha256 = '0'.repeat(64);
+                await fs.writeFile(currentPath, fault === 'json' ? '{' : JSON.stringify(current));
+                if (fault === 'sequence') {
+                    await fs.writeFile(path.join(directory, 'journal', '0000000000000011.jsonl'), JSON.stringify({
+                        recovery_journal_record_version: 1, sequence: 12, type: 'projection_delta', payload: { delta: [] }
+                    }) + '\n');
+                }
+                await expect(new VibeTokenUsageAdapter(root).loadTokenUsage()).rejects.toThrow('Failed to read vibe usage sessions');
+            });
+        }
+    );
+
+    test('supports legacy cached usage alongside unified sessions without recursing subagents', async () => {
+        await withTempDirectory(async (root) => {
+            await createUnifiedVibeSession(root, 'session-a');
+            await createVibeSession(root, 'legacy', {
+                start_time: new Date(2026, 5, 2, 12).toISOString(),
+                stats: { session_prompt_tokens: 100, session_cached_tokens: 40, session_completion_tokens: 20 }
+            });
+            await fs.mkdir(path.join(root, 'legacy', 'subagents'));
+            await createVibeSession(path.join(root, 'legacy', 'subagents'), 'ignored', { stats: { prompt_tokens: 999 } });
+            const usage = await new VibeTokenUsageAdapter(root).loadTokenUsage();
+            expect(usage).toHaveLength(2);
+            expect(usage.find((entry) => entry.model === 'unknown')).toEqual({
+                date: '2026-06-02', agent: 'vibe', model: 'unknown', inputTokens: 60, cachedTokens: 40, outputTokens: 20
+            });
+        });
+    });
+
     test('loads token usage from vibe session metadata', async () => {
         await withTempDirectory(async (sessionDir) => {
             await createVibeSession(sessionDir, 'session_20260602_120000_a', {
@@ -931,6 +1023,46 @@ async function createVibeSession(sessionDir: string, sessionName: string, meta: 
 
     await fs.mkdir(directory);
     await fs.writeFile(path.join(directory, 'meta.json'), JSON.stringify(meta), 'utf8');
+}
+
+function unifiedVibeSession(totalTokens = 120, cachedInputTokens = 40, outputTokens = 20) {
+    return {
+        id: 'session-a', createdAt: new Date(2026, 5, 2, 12).getTime(), updatedAt: new Date(2026, 5, 3, 12).getTime(),
+        tokenUsage: { inputTokens: totalTokens - outputTokens, outputTokens, totalTokens, cachedInputTokens },
+        contextUsage: { inputTokens: 999_999, outputTokens: 999_999 }
+    };
+}
+
+async function createUnifiedVibeSession(root: string, id: string, model = 'mistral-medium-3.5', sessionOverrides = {}): Promise<string> {
+    const { createHash } = await import('node:crypto');
+    const directory = path.join(root, 'unified', id);
+    const generation = '0000000000000001';
+    const generationDir = path.join(directory, 'generations', generation);
+    await fs.mkdir(generationDir, { recursive: true });
+    await fs.mkdir(path.join(directory, 'journal'));
+    const writeDocument = async (name: string, value: unknown) => {
+        const raw = JSON.stringify(value);
+        await fs.writeFile(path.join(generationDir, name), raw + '\n');
+        return { path: name, sha256: createHash('sha256').update(raw).digest('hex') };
+    };
+    const projection = await writeDocument('projection.json', {
+        projection_state_version: 1, session_id: id, snapshot_sequence: 10, watermark: 0,
+        snapshot: { session: { ...unifiedVibeSession(), ...sessionOverrides } }
+    });
+    const runtime = await writeDocument('runtime.json', {
+        runtime_state_version: 3, session_id: id, snapshot_sequence: 10, session_metadata: model ? { active_model: model } : {}
+    });
+    const manifest = await writeDocument('manifest.json', {
+        manifest_version: 1, session_id: id, generation, snapshot_sequence: 10,
+        projection_state: projection, runtime_state: runtime,
+        recovery_journal_segment: { path: 'journal/0000000000000011.jsonl', first_sequence: 11 }
+    });
+    await fs.writeFile(path.join(directory, 'CURRENT'), JSON.stringify({
+        store_format: 'mistral.vibe.unified-session-store/v1', store_format_minor: 8,
+        session_id: id, generation, snapshot_sequence: 10, manifest_sha256: manifest.sha256
+    }));
+    await fs.writeFile(path.join(directory, 'journal', '0000000000000011.jsonl'), '');
+    return directory;
 }
 
 interface CodexTokenCount {
