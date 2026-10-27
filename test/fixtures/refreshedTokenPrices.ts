@@ -2,9 +2,11 @@ import source from './modelsDevPrices.json';
 import previous from './previousTokenPrices.json';
 import previousProviders from './previousTokenPriceProviders.json';
 
-// https://models.dev/api.json, retrieved 2026-10-26 (232 providers, 8,936 base models).
-// Raw response SHA-256: e8819dc5eceb8dfeea7212725b1f1dc933ec34e74b661100f830c8979283a159.
+// https://models.dev/api.json, retrieved 2026-10-27 (232 providers, 8,947 base models).
+// Raw response SHA-256: b835b218e086cde6a5824298592aee26c4af48169907ab8ce23ec42edf324f49.
 // modelsDevPrices.json retains only public provider/ID/canonical ID, base costs and mode costs.
+// Sorted by provider then model key; canonical_model_id -> canonical, cost -> cost,
+// experimental.modes[*].cost -> modes[*] (null without cost); keep only input/output/cache_read.
 // previousTokenPrices.json is the pre-refresh 299-entry config, NOT generated from the new output.
 // USD/million text tokens; cache_read -> cached (omitted cache_read defaults to zero).
 // Missing input/output is unpriced, not free. Tiers, cache writes and non-text rates are out of scope.

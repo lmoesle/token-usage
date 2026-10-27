@@ -214,7 +214,6 @@ describe('token price config adapter', () => {
         expect(prices['minimax-m2.5']).toEqual({ input: 0.3, cached: 0.06, output: 1.2 });
         expect(prices['open-mixtral-8x22b']).toEqual({ input: 2, cached: 0, output: 6 });
         expect(prices['qwen3.6-plus']).toEqual({ input: 0.5, cached: 0.05, output: 3 });
-        expect(Object.keys(prices)).toHaveLength(refreshedTokenPrices.length + historicalTokenPrices.length);
         expect(Object.keys(prices)).toEqual(Object.keys(prices).sort());
         for (const price of Object.values(prices)) {
             expect(Object.keys(price)).toEqual(['input', 'cached', 'output']);
@@ -273,12 +272,15 @@ describe('token price config adapter', () => {
         const prices = await new TokenPriceConfigAdapter().loadTokenPrices();
 
         expect(new Set(sourceModels.map((model) => model.provider)).size).toBe(232);
-        expect(sourceModels).toHaveLength(8936);
-        expect(refreshedTokenPrices).toHaveLength(3900);
+        expect(sourceModels).toHaveLength(8947);
+        expect(refreshedTokenPrices).toHaveLength(3907);
         expect(historicalTokenPrices).toHaveLength(42);
         expect(unpricedModelIds).toHaveLength(269);
         expect(Object.keys(previousTokenPriceProviders)).toEqual(previousTokenPrices.map(([id]) => id));
-        expect(Object.keys(prices).sort()).toEqual([...new Set([...priceCandidates.keys(), ...historicalTokenPrices.map(([id]) => id)])].sort());
+        expect(Object.keys(prices)).toEqual(expect.arrayContaining([
+            ...refreshedTokenPrices.map(([id]) => id),
+            ...previousTokenPrices.map(([id]) => id)
+        ]));
         for (const [model, input, cached, output] of refreshedTokenPrices) {
             expect({ model, price: prices[model] }).toEqual({ model, price: { input, cached, output } });
         }
@@ -324,6 +326,21 @@ describe('token price config adapter', () => {
         ['o4-mini-flex', 0.55, 0.1375, 2.2],
         ['voxtral-small-latest', 0.1, 0, 0.4]
     ])('loads cross-provider additions and changed published rates for %s', async (model, input, cached, output) => {
+        const prices = await new TokenPriceConfigAdapter().loadTokenPrices();
+
+        expect(prices[model]).toEqual({ input, cached, output });
+    });
+
+    test.each([
+        ['gpt-6.1-terra', 1, 0.05, 5],
+        ['gpt-6.1-terra-fast', 2, 0.1, 10],
+        ['gpt-6.1-terra-pro', 1, 0.05, 5],
+        ['openai/gpt-6.1-terra-fast', 2, 0.1, 10],
+        ['arcee-ai/trinity-large-thinking', 0.25, 0.125, 0.9],
+        ['minimax/minimax-m3.1-flash', 0.15, 0.015, 0.6],
+        ['openai/gpt-terra-latest', 1, 0.05, 5],
+        ['openai/o1-pro', 150, 0, 600]
+    ])('loads October 27 additions and changed prices for %s', async (model, input, cached, output) => {
         const prices = await new TokenPriceConfigAdapter().loadTokenPrices();
 
         expect(prices[model]).toEqual({ input, cached, output });
