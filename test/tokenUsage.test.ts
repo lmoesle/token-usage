@@ -3,6 +3,8 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import ts from 'typescript';
+import preRefreshTokenPriceIds from './fixtures/preRefreshTokenPriceIds.json';
+import opencodeModelPrices from './fixtures/opencodeModelPrices.json';
 import { createTokenUsageCli, TokenUsageUseCase } from '../src/index';
 import { LoadTokenPricesOutPort, LoadTokenUsageOutPort, ShowTokenUsageOutPort } from '../src/application/ports/out/tokenUsageOutPort';
 import { createTimeRange, createTokenUsageReport, parseTimePeriod, TimeRange, TokenPrices, TokenUsageMeasurement, TokenUsageReport } from '../src/domain/tokenUsage';
@@ -12,7 +14,7 @@ import { CodingAgentTokenUsageAdapter, CodingAgentUsageHandler } from '../src/ad
 import { VibeTokenUsageAdapter } from '../src/adapter/out/vibeTokenUsageAdapter';
 import { CodexTokenUsageAdapter } from '../src/adapter/out/codexTokenUsageAdapter';
 import { JunieTokenUsageAdapter } from '../src/adapter/out/junieTokenUsageAdapter';
-import { historicalTokenPrices, previousTokenPriceProviders, previousTokenPrices, priceCandidates, refreshedTokenPrices, selectPriceCandidate, sourceModels, unpricedModelIds } from './fixtures/refreshedTokenPrices';
+import { historicalTokenPrices, pinnedTokenPriceProviders, preRefreshTokenPriceProviders, previousTokenPriceProviders, previousTokenPrices, priceCandidates, refreshedTokenPrices, selectPriceCandidate, sourceModels, unpricedModelIds } from './fixtures/refreshedTokenPrices';
 
 describe('token usage domain', () => {
     test('creates a local time range for today only', () => {
@@ -271,16 +273,22 @@ describe('token price config adapter', () => {
     test('covers every published priced model and mode across the complete public catalog', async () => {
         const prices = await new TokenPriceConfigAdapter().loadTokenPrices();
 
-        expect(new Set(sourceModels.map((model) => model.provider)).size).toBe(232);
-        expect(sourceModels).toHaveLength(8947);
-        expect(refreshedTokenPrices).toHaveLength(3907);
-        expect(historicalTokenPrices).toHaveLength(42);
-        expect(unpricedModelIds).toHaveLength(269);
+        expect(new Set(sourceModels.map((model) => model.provider)).size).toBe(235);
+        expect(sourceModels).toHaveLength(8933);
+        expect(refreshedTokenPrices).toHaveLength(3906);
+        expect(historicalTokenPrices).toHaveLength(126);
+        expect(unpricedModelIds).toHaveLength(267);
         expect(Object.keys(previousTokenPriceProviders)).toEqual(previousTokenPrices.map(([id]) => id));
         expect(Object.keys(prices)).toEqual(expect.arrayContaining([
             ...refreshedTokenPrices.map(([id]) => id),
-            ...previousTokenPrices.map(([id]) => id)
+            ...preRefreshTokenPriceIds
         ]));
+        expect(preRefreshTokenPriceIds).toHaveLength(3957);
+        expect(Object.keys(prices)).toHaveLength(4032);
+        expect(Object.keys(prices)).toEqual([
+            ...refreshedTokenPrices.map(([id]) => id),
+            ...historicalTokenPrices.map(([id]) => id)
+        ].sort());
         for (const [model, input, cached, output] of refreshedTokenPrices) {
             expect({ model, price: prices[model] }).toEqual({ model, price: { input, cached, output } });
         }
@@ -313,7 +321,7 @@ describe('token price config adapter', () => {
         ['claude-sonnet-4-20250514', 3, 0.3, 15],
         ['gpt-5.2-chat-latest', 1.75, 0.175, 14],
         ['gpt-5.3-chat-latest', 1.75, 0.175, 14],
-        ['mistral-large-4', 1.36, 0.14, 4.18],
+        ['mistral-large-4', 0.7, 0.07, 2.1],
         ['amazon.nova-pro-v1:0', 0.8, 0.2, 3.2],
         ['deepseek-chat', 0.1, 0.05, 0.425],
         ['meta-llama/llama-3.3-70b-instruct', 0.1, 0, 0.32],
@@ -343,6 +351,109 @@ describe('token price config adapter', () => {
     ])('loads October 27 additions and changed prices for %s', async (model, input, cached, output) => {
         const prices = await new TokenPriceConfigAdapter().loadTokenPrices();
 
+        expect(prices[model]).toEqual({ input, cached, output });
+    });
+
+    test.each([
+        ['pulse-alpha-free', 0, 0, 0],
+        ['mistral-large-4-0-8', 0.7, 0.07, 2.1],
+        ['mistralai/mistral-large-4-0', 0.7, 0.07, 2.1],
+        ['mistral/mistral-large-4@eu', 0.748, 0.077, 2.299],
+        ['deepseek-v4-pro-fast', 1.91, 0.16, 3.83]
+    ])('loads November 3 additions and changed prices for %s', async (model, input, cached, output) => {
+        const prices = await new TokenPriceConfigAdapter().loadTokenPrices();
+
+        expect(prices[model]).toEqual({ input, cached, output });
+    });
+
+    test('cross-checks explicit local V2 API rates without treating empty OAuth costs as free', async () => {
+        const prices = await new TokenPriceConfigAdapter().loadTokenPrices();
+
+        expect(opencodeModelPrices.records).toBe(48);
+        expect(opencodeModelPrices.models).toHaveLength(opencodeModelPrices.records);
+        expect(new Set(opencodeModelPrices.models.map((model) => `${model.provider}/${model.id}`)).size).toBe(opencodeModelPrices.records);
+        const variants = opencodeModelPrices.models.filter((model) => model.id !== model.modelID);
+        expect(variants).toHaveLength(10);
+        expect(variants.map((model) => model.id)).toEqual(expect.arrayContaining([
+            'gpt-6-astra-fast', 'gpt-6-astra-ultrafast',
+            'gpt-6.1-sol-fast', 'gpt-6.1-sol-ultrafast', 'gpt-6.1-terra-fast'
+        ]));
+        const unpricedApiIds = ['gpt-5.6-cyber'];
+        for (const model of opencodeModelPrices.models) {
+            const published = sourceModels.find((entry) => entry.provider === model.provider && entry.id === model.modelID);
+            const mode = model.id === model.modelID ? undefined : model.id.slice(model.modelID.length + 1);
+            if (mode) {
+                expect(model.id.startsWith(`${model.modelID}-`)).toBe(true);
+                expect(Object.hasOwn(published?.modes ?? {}, mode)).toBe(true);
+            }
+            const publishedCost = mode ? { ...published?.cost, ...published?.modes?.[mode] } : published?.cost;
+            const base = model.cost[0];
+            if (base) {
+                expect(publishedCost).toBeDefined();
+                expect({ cache_read: 0, ...publishedCost }).toEqual(base);
+            } else {
+                expect(model.provider).toBe('openai');
+            }
+            if (unpricedApiIds.includes(model.id)) {
+                expect(base).toBeUndefined();
+                expect(publishedCost?.input).toBeUndefined();
+                expect(prices[model.id]).toBeUndefined();
+                continue;
+            }
+            expect(publishedCost?.input).toBeDefined();
+            expect(publishedCost?.output).toBeDefined();
+            const selected = selectPriceCandidate(priceCandidates.get(model.id) ?? [], pinnedTokenPriceProviders[model.id]);
+            expect(selected).toBeDefined();
+            const [input, cached, output] = selected!.rates;
+            expect(prices[model.id]).toEqual({ input, cached, output });
+        }
+        expect(prices['gpt-6.1-sol']).toEqual({ input: 2, cached: 0.1, output: 10 });
+        expect(prices['gpt-5.6-cyber']).toBeUndefined();
+        expect(prices['pulse-alpha-free']).toEqual({ input: 0, cached: 0, output: 0 });
+    });
+
+    test('pins every traceable previous selection without inventing providers for the eight unknown historical IDs', () => {
+        expect(Object.keys(preRefreshTokenPriceProviders)).toHaveLength(3650);
+        expect(Object.keys(preRefreshTokenPriceProviders).some((id) => Object.hasOwn(previousTokenPriceProviders, id))).toBe(false);
+        expect(preRefreshTokenPriceIds.filter((id) => !Object.hasOwn(pinnedTokenPriceProviders, id))).toEqual([
+            'Nemotron-3-Nano-Omni-30B-TEE', 'Qwen/Qwen3-235B-A22B-Thinking-2507-TEE',
+            'Qwen/Qwen3-32B-TEE', 'aisingapore/Gemma-SEA-LION-v4-27B-IT',
+            'aisingapore/Qwen-SEA-LION-v4-32B-IT', 'longcat-2.5-preview',
+            'qwen/qwen3-max-2026-01-23', 'unsloth/Mistral-Nemo-Instruct-2407-TEE'
+        ]);
+        for (const [id, provider] of Object.entries(pinnedTokenPriceProviders)) {
+            const selected = selectPriceCandidate(priceCandidates.get(id) ?? [], provider);
+            if (selected) expect(selected.provider).toBe(provider);
+            else expect(historicalTokenPrices.some(([model]) => model === id)).toBe(true);
+        }
+    });
+
+    test.each([
+        ['openai/o3-mini-high', 'kilo', 1.1, 0.55, 4.4],
+        ['openai/o1-pro', 'edenai', 150, 0, 600],
+        ['apertus-70b', 'cortecs', 1.393, 0, 2.228],
+        ['deepseek-ai/deepseek-v4.1-flash-1017', 'munito', 0.27, 0.0054, 1],
+        ['deepseek-v4-1-flash', 'empiriolabs', 0.3, 0.3, 1.2],
+        ['doubao-1.5-pro-32k', 'nano-gpt', 0.1343, 0.06715, 0.3349],
+        ['novita/deepseek-v3.2', 'llmgateway-providers', 0.269, 0.1345, 0.4],
+        ['novita/minimax-m2.1', 'llmgateway-providers', 0.3, 0.03, 1.2],
+        ['qwen3-235b-a22b-thinking-2507', 'llmgateway', 0.3, 0, 3],
+        ['qwen3.8-flash-next', 'cortecs', 0.201, 0.05, 0.5]
+    ])('keeps %s at its prior %s source rather than switching provider', async (model, provider, input, cached, output) => {
+        const prices = await new TokenPriceConfigAdapter().loadTokenPrices();
+
+        expect(pinnedTokenPriceProviders[model]).toBe(provider);
+        expect(prices[model]).toEqual({ input, cached, output });
+    });
+
+    test.each([
+        ['amazon/qwen.qwen3-coder-next', 'edenai', 0.78, 0, 1.86],
+        ['deepseek/deepseek-v3.2', 'kilo', 0.26, 0.13, 0.38],
+        ['deepseek/deepseek-v4.1-flash-1017:thinking', 'nano-gpt', 0.1, 0.0042, 0.6]
+    ])('still refreshes %s rates at the same prior %s provider', async (model, provider, input, cached, output) => {
+        const prices = await new TokenPriceConfigAdapter().loadTokenPrices();
+
+        expect(preRefreshTokenPriceProviders[model]).toBe(provider);
         expect(prices[model]).toEqual({ input, cached, output });
     });
 
@@ -426,7 +537,7 @@ describe('token price config adapter', () => {
         ['gpt-6.1-sol-pro', 2, 0.1, 10],
         ['gpt-6-astra-ultrafast', 60, 6, 300],
         ['gpt-5-flex', 0.625, 0.0625, 5],
-        ['mistral-large-4', 1.36, 0.14, 4.18],
+        ['mistral-large-4', 0.7, 0.07, 2.1],
         ['mistral-small-latest', 0.15, 0.015, 0.6],
         ['mistral-medium-latest', 1.5, 0.15, 7.5],
         ['codestral-latest', 0.3, 0.03, 0.9],
