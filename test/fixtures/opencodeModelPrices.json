@@ -1,0 +1,470 @@
+{
+  "captured": "2026-11-03T08:54:17.522Z",
+  "command": "opencode api get /api/model",
+  "directory": ".",
+  "records": 48,
+  "models": [
+    {
+      "provider": "mistral",
+      "id": "codestral-2508",
+      "modelID": "codestral-2508",
+      "cost": [
+        {
+          "input": 0.3,
+          "output": 0.9,
+          "cache_read": 0.03
+        }
+      ]
+    },
+    {
+      "provider": "mistral",
+      "id": "codestral-latest",
+      "modelID": "codestral-latest",
+      "cost": [
+        {
+          "input": 0.3,
+          "output": 0.9,
+          "cache_read": 0.03
+        }
+      ]
+    },
+    {
+      "provider": "mistral",
+      "id": "deepseek-v4-1-flash-1017",
+      "modelID": "deepseek-v4-1-flash-1017",
+      "cost": [
+        {
+          "input": 0.3,
+          "output": 1.2,
+          "cache_read": 0.007
+        }
+      ]
+    },
+    {
+      "provider": "mistral",
+      "id": "ministral-14b-2512",
+      "modelID": "ministral-14b-2512",
+      "cost": [
+        {
+          "input": 0.2,
+          "output": 0.2,
+          "cache_read": 0.02
+        }
+      ]
+    },
+    {
+      "provider": "mistral",
+      "id": "ministral-3b-2512",
+      "modelID": "ministral-3b-2512",
+      "cost": [
+        {
+          "input": 0.1,
+          "output": 0.1,
+          "cache_read": 0.01
+        }
+      ]
+    },
+    {
+      "provider": "mistral",
+      "id": "ministral-3b-latest",
+      "modelID": "ministral-3b-latest",
+      "cost": [
+        {
+          "input": 0.1,
+          "output": 0.1,
+          "cache_read": 0.01
+        }
+      ]
+    },
+    {
+      "provider": "mistral",
+      "id": "ministral-8b-2512",
+      "modelID": "ministral-8b-2512",
+      "cost": [
+        {
+          "input": 0.15,
+          "output": 0.15,
+          "cache_read": 0.015
+        }
+      ]
+    },
+    {
+      "provider": "mistral",
+      "id": "ministral-8b-latest",
+      "modelID": "ministral-8b-latest",
+      "cost": [
+        {
+          "input": 0.15,
+          "output": 0.15,
+          "cache_read": 0.015
+        }
+      ]
+    },
+    {
+      "provider": "mistral",
+      "id": "mistral-large-2512",
+      "modelID": "mistral-large-2512",
+      "cost": [
+        {
+          "input": 0.5,
+          "output": 1.5,
+          "cache_read": 0.05
+        }
+      ]
+    },
+    {
+      "provider": "mistral",
+      "id": "mistral-large-4",
+      "modelID": "mistral-large-4",
+      "cost": [
+        {
+          "input": 0.7,
+          "output": 2.1,
+          "cache_read": 0.07
+        }
+      ]
+    },
+    {
+      "provider": "mistral",
+      "id": "mistral-large-4-0-8",
+      "modelID": "mistral-large-4-0-8",
+      "cost": [
+        {
+          "input": 0.7,
+          "output": 2.1,
+          "cache_read": 0.07
+        }
+      ]
+    },
+    {
+      "provider": "mistral",
+      "id": "mistral-large-latest",
+      "modelID": "mistral-large-latest",
+      "cost": [
+        {
+          "input": 0.5,
+          "output": 1.5,
+          "cache_read": 0.05
+        }
+      ]
+    },
+    {
+      "provider": "mistral",
+      "id": "mistral-medium-2604",
+      "modelID": "mistral-medium-2604",
+      "cost": [
+        {
+          "input": 1.5,
+          "output": 7.5,
+          "cache_read": 0.15
+        }
+      ]
+    },
+    {
+      "provider": "mistral",
+      "id": "mistral-medium-latest",
+      "modelID": "mistral-medium-latest",
+      "cost": [
+        {
+          "input": 1.5,
+          "output": 7.5,
+          "cache_read": 0.15
+        }
+      ]
+    },
+    {
+      "provider": "mistral",
+      "id": "mistral-small-2603",
+      "modelID": "mistral-small-2603",
+      "cost": [
+        {
+          "input": 0.15,
+          "output": 0.6,
+          "cache_read": 0.015
+        }
+      ]
+    },
+    {
+      "provider": "mistral",
+      "id": "mistral-small-latest",
+      "modelID": "mistral-small-latest",
+      "cost": [
+        {
+          "input": 0.15,
+          "output": 0.6,
+          "cache_read": 0.015
+        }
+      ]
+    },
+    {
+      "provider": "mistral",
+      "id": "voxtral-small-2507",
+      "modelID": "voxtral-small-2507",
+      "cost": [
+        {
+          "input": 0.1,
+          "output": 0.4,
+          "cache_read": 0
+        }
+      ]
+    },
+    {
+      "provider": "mistral",
+      "id": "voxtral-small-latest",
+      "modelID": "voxtral-small-latest",
+      "cost": [
+        {
+          "input": 0.1,
+          "output": 0.4,
+          "cache_read": 0
+        }
+      ]
+    },
+    {
+      "provider": "mistral",
+      "id": "zai-glm-5-3",
+      "modelID": "zai-glm-5-3",
+      "cost": [
+        {
+          "input": 1.4,
+          "output": 4.4,
+          "cache_read": 0.14
+        }
+      ]
+    },
+    {
+      "provider": "mistral",
+      "id": "zai-glm-5-3-flash",
+      "modelID": "zai-glm-5-3-flash",
+      "cost": [
+        {
+          "input": 0.15,
+          "output": 0.5,
+          "cache_read": 0.03
+        }
+      ]
+    },
+    {
+      "provider": "openai",
+      "id": "gpt-5.6-cyber",
+      "modelID": "gpt-5.6-cyber",
+      "cost": []
+    },
+    {
+      "provider": "openai",
+      "id": "gpt-5.6-luna",
+      "modelID": "gpt-5.6-luna",
+      "cost": []
+    },
+    {
+      "provider": "openai",
+      "id": "gpt-5.6-luna-fast",
+      "modelID": "gpt-5.6-luna",
+      "cost": []
+    },
+    {
+      "provider": "openai",
+      "id": "gpt-5.6-sol",
+      "modelID": "gpt-5.6-sol",
+      "cost": []
+    },
+    {
+      "provider": "openai",
+      "id": "gpt-5.6-sol-fast",
+      "modelID": "gpt-5.6-sol",
+      "cost": []
+    },
+    {
+      "provider": "openai",
+      "id": "gpt-5.6-terra",
+      "modelID": "gpt-5.6-terra",
+      "cost": []
+    },
+    {
+      "provider": "openai",
+      "id": "gpt-5.6-terra-fast",
+      "modelID": "gpt-5.6-terra",
+      "cost": []
+    },
+    {
+      "provider": "openai",
+      "id": "gpt-6-astra",
+      "modelID": "gpt-6-astra",
+      "cost": []
+    },
+    {
+      "provider": "openai",
+      "id": "gpt-6-astra-fast",
+      "modelID": "gpt-6-astra",
+      "cost": []
+    },
+    {
+      "provider": "openai",
+      "id": "gpt-6-astra-ultrafast",
+      "modelID": "gpt-6-astra",
+      "cost": []
+    },
+    {
+      "provider": "openai",
+      "id": "gpt-6-luna",
+      "modelID": "gpt-6-luna",
+      "cost": []
+    },
+    {
+      "provider": "openai",
+      "id": "gpt-6-luna-fast",
+      "modelID": "gpt-6-luna",
+      "cost": []
+    },
+    {
+      "provider": "openai",
+      "id": "gpt-6-sol",
+      "modelID": "gpt-6-sol",
+      "cost": []
+    },
+    {
+      "provider": "openai",
+      "id": "gpt-6-sol-fast",
+      "modelID": "gpt-6-sol",
+      "cost": []
+    },
+    {
+      "provider": "openai",
+      "id": "gpt-6.1-sol",
+      "modelID": "gpt-6.1-sol",
+      "cost": []
+    },
+    {
+      "provider": "openai",
+      "id": "gpt-6.1-sol-fast",
+      "modelID": "gpt-6.1-sol",
+      "cost": []
+    },
+    {
+      "provider": "openai",
+      "id": "gpt-6.1-sol-ultrafast",
+      "modelID": "gpt-6.1-sol",
+      "cost": []
+    },
+    {
+      "provider": "openai",
+      "id": "gpt-6.1-terra",
+      "modelID": "gpt-6.1-terra",
+      "cost": []
+    },
+    {
+      "provider": "openai",
+      "id": "gpt-6.1-terra-fast",
+      "modelID": "gpt-6.1-terra",
+      "cost": []
+    },
+    {
+      "provider": "opencode",
+      "id": "beam-free",
+      "modelID": "beam-free",
+      "cost": [
+        {
+          "input": 0,
+          "output": 0,
+          "cache_read": 0
+        }
+      ]
+    },
+    {
+      "provider": "opencode",
+      "id": "big-pickle",
+      "modelID": "big-pickle",
+      "cost": [
+        {
+          "input": 0,
+          "output": 0,
+          "cache_read": 0
+        }
+      ]
+    },
+    {
+      "provider": "opencode",
+      "id": "deepseek-v4.1-flash-free",
+      "modelID": "deepseek-v4.1-flash-free",
+      "cost": [
+        {
+          "input": 0,
+          "output": 0,
+          "cache_read": 0
+        }
+      ]
+    },
+    {
+      "provider": "opencode",
+      "id": "flint-40b-free",
+      "modelID": "flint-40b-free",
+      "cost": [
+        {
+          "input": 0,
+          "output": 0,
+          "cache_read": 0
+        }
+      ]
+    },
+    {
+      "provider": "opencode",
+      "id": "glm-5.3-flash-free",
+      "modelID": "glm-5.3-flash-free",
+      "cost": [
+        {
+          "input": 0,
+          "output": 0,
+          "cache_read": 0
+        }
+      ]
+    },
+    {
+      "provider": "opencode",
+      "id": "mimo-v2.6-flash-free",
+      "modelID": "mimo-v2.6-flash-free",
+      "cost": [
+        {
+          "input": 0,
+          "output": 0,
+          "cache_read": 0
+        }
+      ]
+    },
+    {
+      "provider": "opencode",
+      "id": "nemotron-3.5-lightning-free",
+      "modelID": "nemotron-3.5-lightning-free",
+      "cost": [
+        {
+          "input": 0,
+          "output": 0,
+          "cache_read": 0
+        }
+      ]
+    },
+    {
+      "provider": "opencode",
+      "id": "nemotron-3.5-super-vl-free",
+      "modelID": "nemotron-3.5-super-vl-free",
+      "cost": [
+        {
+          "input": 0,
+          "output": 0,
+          "cache_read": 0
+        }
+      ]
+    },
+    {
+      "provider": "opencode",
+      "id": "pulse-alpha-free",
+      "modelID": "pulse-alpha-free",
+      "cost": [
+        {
+          "input": 0,
+          "output": 0,
+          "cache_read": 0
+        }
+      ]
+    }
+  ]
+}
