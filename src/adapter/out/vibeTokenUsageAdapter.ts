@@ -66,7 +66,7 @@ export class VibeTokenUsageAdapter implements LoadTokenUsageOutPort {
             const current = requireObject(JSON.parse(await readStoreFile(sessionPath, 'CURRENT')));
             const minor = current.store_format_minor ?? 1;
             requireValid(current.store_format === 'mistral.vibe.unified-session-store/v1'
-                && isSequence(minor) && minor >= 1 && minor <= 8, 'unsupported unified store format');
+                && isSequence(minor) && minor >= 1 && minor <= 10, 'unsupported unified store format');
             requireValid(current.session_id === id && typeof current.generation === 'string'
                 && /^[0-9]{16}$/.test(current.generation) && isSequence(current.snapshot_sequence), 'invalid CURRENT identity or generation');
             const generation = `generations/${current.generation}`;
@@ -91,6 +91,7 @@ export class VibeTokenUsageAdapter implements LoadTokenUsageOutPort {
             requireValid(journal.first_sequence === sequence + 1 && typeof journal.path === 'string'
                 && /^journal\/[0-9]{16}\.jsonl$/.test(journal.path), 'invalid recovery journal reference');
             let session = requireObject(requireObject(projection.snapshot).session);
+            let sessionMetadata = isJsonObject(runtime.session_metadata) ? runtime.session_metadata : {};
             let watermark = projection.watermark;
             requireValid(isSequence(watermark), 'invalid projection watermark');
             let expectedSequence = sequence + 1;
@@ -102,16 +103,23 @@ export class VibeTokenUsageAdapter implements LoadTokenUsageOutPort {
                     'invalid recovery journal version or sequence gap');
                 expectedSequence++;
                 const payload = requireObject(record.payload);
-                if (record.type !== 'projection_advanced' && record.type !== 'projection_delta') {
+                if (record.type !== 'projection_advanced' && record.type !== 'projection_delta' && record.type !== 'session_relocated') {
                     continue;
                 }
                 requireValid(isSequence(payload.watermark) && (payload.watermark as number) >= (watermark as number),
                     'projection watermark moved backwards');
-                watermark = payload.watermark;
                 if (record.type === 'projection_advanced') {
+                    watermark = payload.watermark;
                     session = requireObject(requireObject(payload.snapshot).session);
                 } else {
+                    if (record.type === 'session_relocated') {
+                        sessionMetadata = requireObject(payload.metadata);
+                    }
                     requireValid(Array.isArray(payload.delta), 'invalid projection delta');
+                    // Metadata-only relocations leave the projection and its watermark unchanged.
+                    if (record.type !== 'session_relocated' || (payload.delta as unknown[]).length > 0) {
+                        watermark = payload.watermark;
+                    }
                     for (const value of payload.delta as unknown[]) {
                         const delta = requireObject(value);
                         if (delta.op === 'set_envelope') {
@@ -137,7 +145,7 @@ export class VibeTokenUsageAdapter implements LoadTokenUsageOutPort {
             }
             return [{
                 date: toDateKey(startedAt), agent: VIBE_AGENT,
-                model: readModel(isJsonObject(runtime.session_metadata) ? runtime.session_metadata : {}),
+                model: readModel(sessionMetadata),
                 inputTokens: input - cachedTokens, outputTokens, cachedTokens
             }];
         } catch (err: unknown) {
