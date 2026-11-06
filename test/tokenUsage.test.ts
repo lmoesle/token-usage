@@ -742,28 +742,92 @@ describe('opencode token usage adapter', () => {
 });
 
 describe('vibe token usage adapter', () => {
-    test.each(['projection_advanced', 'projection_delta'])('loads only the selected unified generation and cumulative %s replacements', async (type) => {
+    test.each([8, 9, 10].flatMap((minor) => ['projection_advanced', 'projection_delta'].map((type) => ({ minor, type }))))(
+        'loads only the selected unified generation and cumulative $type replacements at minor $minor', async ({ minor, type }) => {
+            await withTempDirectory(async (root) => {
+                const directory = await createUnifiedVibeSession(root, 'session-a', 'mistral-medium-3.5', { tokenUsage: null }, { store_format_minor: minor });
+                await fs.mkdir(path.join(directory, 'generations', '0000000000000002'));
+                await fs.writeFile(path.join(directory, 'generations', '0000000000000002', 'projection.json'), '{"ignored":true}');
+                await fs.writeFile(path.join(directory, 'journal', '0000000000000000.jsonl'), 'old invalid journal');
+                const session = unifiedVibeSession(178_162, 139_104, 9_620);
+                const payload = type === 'projection_advanced'
+                    ? { watermark: 2, snapshot: { session } }
+                    : { watermark: 2, delta: [{ op: 'set_envelope', state: { session } }] };
+                const initialSession = unifiedVibeSession(1_000, 100, 20);
+                const initialPayload = type === 'projection_advanced'
+                    ? { watermark: 1, snapshot: { session: initialSession } }
+                    : { watermark: 1, delta: [{ op: 'set_envelope', state: { session: initialSession } }] };
+                const records = [
+                    { sequence: 11, type: 'core_input', payload: {} },
+                    { sequence: 12, type, payload: initialPayload },
+                    { sequence: 13, type, payload },
+                    { sequence: 14, type, payload }
+                ].map((record) => JSON.stringify({ recovery_journal_record_version: 1, ...record }));
+                await fs.writeFile(path.join(directory, 'journal', '0000000000000011.jsonl'), records.join('\n') + '\n{"sequence":15');
+
+                expect(await new VibeTokenUsageAdapter(root).loadTokenUsage()).toEqual([{
+                    date: '2026-06-02', agent: 'vibe', model: 'mistral-medium-3.5',
+                    inputTokens: 29_438, cachedTokens: 139_104, outputTokens: 9_620
+                }]);
+            });
+        }
+    );
+
+    test.each([9, 10])('replays interleaved relocations and projections with the latest model and cumulative usage at minor %s', async (minor) => {
         await withTempDirectory(async (root) => {
-            const directory = await createUnifiedVibeSession(root, 'session-a');
-            await fs.mkdir(path.join(directory, 'generations', '0000000000000002'));
-            await fs.writeFile(path.join(directory, 'generations', '0000000000000002', 'projection.json'), '{"ignored":true}');
-            await fs.writeFile(path.join(directory, 'journal', '0000000000000000.jsonl'), 'old invalid journal');
-            const session = unifiedVibeSession(178_162, 139_104, 9_620);
-            const payload = type === 'projection_advanced'
-                ? { watermark: 2, snapshot: { session } }
-                : { watermark: 2, delta: [{ op: 'set_envelope', state: { session } }] };
+            const directory = await createUnifiedVibeSession(root, 'session-a', 'old-model', { tokenUsage: null }, { store_format_minor: minor });
             const records = [
-                { sequence: 11, type: 'core_input', payload: {} },
-                { sequence: 12, type: 'projection_advanced', payload: { watermark: 1, snapshot: { session: unifiedVibeSession(1_000, 100, 20) } } },
-                { sequence: 13, type, payload },
-                { sequence: 14, type, payload }
-            ].map((record) => JSON.stringify({ recovery_journal_record_version: 1, ...record }));
-            await fs.writeFile(path.join(directory, 'journal', '0000000000000011.jsonl'), records.join('\n') + '\n{"sequence":15');
+                { type: 'projection_delta', payload: { watermark: 1, delta: [{ op: 'set_envelope', state: { session: unifiedVibeSession(1_000, 100, 20) } }] } },
+                { type: 'session_relocated', payload: { metadata: { active_model: 'intermediate-model' }, plugin_lock: {}, watermark: 2, delta: [{ op: 'set_envelope', state: { session: unifiedVibeSession(2_000, 200, 40) } }] } },
+                { type: 'projection_advanced', payload: { watermark: 3, snapshot: { session: unifiedVibeSession(3_000, 300, 60) } } },
+                { type: 'session_relocated', payload: { metadata: { active_model: 'latest-model' }, plugin_lock: {}, watermark: 4, delta: [{ op: 'set_envelope', state: { session: unifiedVibeSession(178_162, 139_104, 9_620) } }] } }
+            ].map((record, index) => JSON.stringify({ recovery_journal_record_version: 1, sequence: 11 + index, ...record }));
+            await fs.writeFile(path.join(directory, 'journal', '0000000000000011.jsonl'), records.join('\n') + '\n');
 
             expect(await new VibeTokenUsageAdapter(root).loadTokenUsage()).toEqual([{
-                date: '2026-06-02', agent: 'vibe', model: 'mistral-medium-3.5',
+                date: '2026-06-02', agent: 'vibe', model: 'latest-model',
                 inputTokens: 29_438, cachedTokens: 139_104, outputTokens: 9_620
             }]);
+        });
+    });
+
+    test.each([
+        { metadata: { active_model: 'relocated-model' }, model: 'relocated-model' },
+        { metadata: {}, model: 'unknown' },
+        { metadata: { active_model: ' ' }, model: 'unknown' }
+    ])('replaces relocation metadata with $metadata while preserving snapshot usage and watermark for an empty delta', async ({ metadata, model }) => {
+        await withTempDirectory(async (root) => {
+            const directory = await createUnifiedVibeSession(root, 'session-a', 'old-model', {}, { store_format_minor: 10 });
+            const journalPath = path.join(directory, 'journal', '0000000000000011.jsonl');
+            const relocation = JSON.stringify({
+                recovery_journal_record_version: 1, sequence: 11, type: 'session_relocated',
+                payload: { metadata, plugin_lock: {}, watermark: 5, delta: [] }
+            });
+            await fs.writeFile(journalPath, relocation + '\n');
+            const expected = [{ date: '2026-06-02', agent: 'vibe', model, inputTokens: 60, cachedTokens: 40, outputTokens: 20 }];
+            expect(await new VibeTokenUsageAdapter(root).loadTokenUsage()).toEqual(expected);
+
+            await fs.appendFile(journalPath, JSON.stringify({
+                recovery_journal_record_version: 1, sequence: 12, type: 'projection_delta',
+                payload: { watermark: 1, delta: [{ op: 'set_envelope', state: { session: unifiedVibeSession() } }] }
+            }) + '\n');
+            expect(await new VibeTokenUsageAdapter(root).loadTokenUsage()).toEqual(expected);
+        });
+    });
+
+    test.each(['metadata', 'delta', 'watermark'])('rejects malformed relocation %s rather than reporting misleading usage', async (fault) => {
+        await withTempDirectory(async (root) => {
+            const directory = await createUnifiedVibeSession(root, 'session-a', 'old-model', {}, { store_format_minor: 10 });
+            const records = [
+                { type: 'projection_advanced', payload: { watermark: 2, snapshot: { session: unifiedVibeSession() } } },
+                { type: 'session_relocated', payload: {
+                    metadata: fault === 'metadata' ? null : { active_model: 'relocated-model' }, plugin_lock: {},
+                    watermark: fault === 'watermark' ? 1 : 3, delta: fault === 'delta' ? {} : []
+                } }
+            ].map((record, index) => JSON.stringify({ recovery_journal_record_version: 1, sequence: 11 + index, ...record }));
+            await fs.writeFile(path.join(directory, 'journal', '0000000000000011.jsonl'), records.join('\n') + '\n');
+
+            await expect(new VibeTokenUsageAdapter(root).loadTokenUsage()).rejects.toThrow('Failed to read vibe usage sessions');
         });
     });
 
@@ -785,9 +849,9 @@ describe('vibe token usage adapter', () => {
         });
     });
 
-    test('uses the snapshot, unknown model and session start date without stored cost or context usage', async () => {
+    test.each([undefined, 1, 8, 9, 10])('uses the snapshot, unknown model and session start date at minor %s without stored cost or context usage', async (minor) => {
         await withTempDirectory(async (root) => {
-            await createUnifiedVibeSession(root, 'session-a', '');
+            await createUnifiedVibeSession(root, 'session-a', '', {}, { store_format_minor: minor });
             const adapter = new VibeTokenUsageAdapter(root);
             expect(await adapter.loadTokenUsage()).toEqual([{
                 date: '2026-06-02', agent: 'vibe', model: 'unknown', inputTokens: 60, cachedTokens: 40, outputTokens: 20
@@ -796,13 +860,22 @@ describe('vibe token usage adapter', () => {
         });
     });
 
-    test.each(['format', 'identity', 'reference', 'sequence', 'json', 'digest'])(
+    test.each([0, -1, 1.5, '10', Number.MAX_SAFE_INTEGER + 1, 11])('rejects unsupported unified store minor %s', async (minor) => {
+        await withTempDirectory(async (root) => {
+            await createUnifiedVibeSession(root, 'session-a', 'mistral-medium-3.5', {}, { store_format_minor: minor });
+
+            await expect(new VibeTokenUsageAdapter(root).loadTokenUsage()).rejects.toThrow('unsupported unified store format');
+        });
+    });
+
+    test.each(['format', 'major', 'identity', 'reference', 'sequence', 'json', 'digest'])(
         'rejects malformed unified %s rather than reporting misleading usage', async (fault) => {
             await withTempDirectory(async (root) => {
                 const directory = await createUnifiedVibeSession(root, 'session-a');
                 const currentPath = path.join(directory, 'CURRENT');
                 const current = JSON.parse(await fs.readFile(currentPath, 'utf8'));
                 if (fault === 'format') current.store_format = 'unsupported';
+                if (fault === 'major') current.store_format = 'mistral.vibe.unified-session-store/v2';
                 if (fault === 'identity') current.session_id = 'another-session';
                 if (fault === 'reference') current.generation = '../../outside';
                 if (fault === 'digest') current.manifest_sha256 = '0'.repeat(64);
@@ -1278,7 +1351,7 @@ function unifiedVibeSession(totalTokens = 120, cachedInputTokens = 40, outputTok
     };
 }
 
-async function createUnifiedVibeSession(root: string, id: string, model = 'mistral-medium-3.5', sessionOverrides = {}): Promise<string> {
+async function createUnifiedVibeSession(root: string, id: string, model = 'mistral-medium-3.5', sessionOverrides = {}, currentOverrides: { store_format_minor?: unknown } = {}): Promise<string> {
     const { createHash } = await import('node:crypto');
     const directory = path.join(root, 'unified', id);
     const generation = '0000000000000001';
@@ -1304,7 +1377,7 @@ async function createUnifiedVibeSession(root: string, id: string, model = 'mistr
     });
     await fs.writeFile(path.join(directory, 'CURRENT'), JSON.stringify({
         store_format: 'mistral.vibe.unified-session-store/v1', store_format_minor: 8,
-        session_id: id, generation, snapshot_sequence: 10, manifest_sha256: manifest.sha256
+        session_id: id, generation, snapshot_sequence: 10, manifest_sha256: manifest.sha256, ...currentOverrides
     }));
     await fs.writeFile(path.join(directory, 'journal', '0000000000000011.jsonl'), '');
     return directory;
