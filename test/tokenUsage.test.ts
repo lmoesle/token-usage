@@ -80,6 +80,7 @@ describe('token usage domain', () => {
             expect(report.entries[0]).toEqual({ ...measurement, totalTokens: 178_162, cost: expect.any(Number) });
             expect(report.entries[0].cost).toBeCloseTo(0.09972184, 8);
             expect(report.total.cost).toBeCloseTo(0.09972184, 8);
+            expect(measurement.model).toBe(model);
         }
     );
 
@@ -96,7 +97,7 @@ describe('token usage domain', () => {
         }).total.cost).toBe(0);
     });
 
-    test.each(['mistral-large-4-0', 'mistral-large-4-0-3'])(
+    test.each(['mistral-large-4-0', 'mistral-large-4-0-3', 'mistral-large-4.1'])(
         'prefers exact prices for %s over major-version prices', (model) => {
             const report = createTokenUsageReport('daily', [
                 { date: '2026-10-26', agent: 'vibe', model, inputTokens: 1_000_000, outputTokens: 1_000_000, cachedTokens: 1_000_000 }
@@ -109,7 +110,7 @@ describe('token usage domain', () => {
         }
     );
 
-    test.each(['unknown-model', 'claude-large-4-0-3', 'mistral-unknown-4-0-3', 'mistral-large-4-latest', 'mistral-large-4-0-3:free'])(
+    test.each(['unknown', 'unknown-model', 'claude-large-4-0-3', 'mistral-unknown-4-0-3', 'mistral-large-40', 'mistral-large-41', 'mistral-large-4-latest', 'mistral-large-4-0-3:free', 'mistral/mistral-large-4-0', 'mistral-large-4@eu', 'mistral-large-4.', 'mistral-large-4--1', 'mistral-large-4.1beta'])(
         'does not infer prices for unrelated or unknown model %s', (model) => {
             const report = createTokenUsageReport('daily', [
                 { date: '2026-10-26', agent: 'vibe', model, inputTokens: 1_000_000, outputTokens: 1_000_000, cachedTokens: 1_000_000 }
@@ -119,8 +120,60 @@ describe('token usage domain', () => {
             });
 
             expect(report.total.cost).toBe(0);
+            expect(report.entries[0].model).toBe(model);
         }
     );
+
+    test.each(['vibe', 'opencode'])('keeps original model groups and exact prices for domain inputs from %s', (agent) => {
+        const base = { date: '2026-10-26', agent, inputTokens: 1_000_000, outputTokens: 0, cachedTokens: 0 };
+        const measurements = ['mistral-large-4', 'mistral-large-4-0', 'mistral-large-4.1'].map((model) => ({ ...base, model }));
+        const original = measurements.map((measurement) => ({ ...measurement }));
+        const report = createTokenUsageReport('daily', measurements, undefined, {
+            'mistral-large-4': { input: 1, cached: 0, output: 0 },
+            'mistral-large-4-0': { input: 2, cached: 0, output: 0 }
+        });
+
+        expect(report.entries).toEqual([
+            { ...base, model: 'mistral-large-4', totalTokens: 1_000_000, cost: 1 },
+            { ...base, model: 'mistral-large-4-0', totalTokens: 1_000_000, cost: 2 },
+            { ...base, model: 'mistral-large-4.1', totalTokens: 1_000_000, cost: 0 }
+        ]);
+        expect(report.total.cost).toBe(3);
+        expect(measurements).toEqual(original);
+    });
+
+    test.each([0, 1.5].flatMap((cost) => [false, true].map((reverse) => ({ cost, reverse }))))(
+        'sums mixed recorded and estimated costs with recorded $cost and reverse order $reverse', ({ cost, reverse }) => {
+            const base = { date: '2026-10-26', agent: 'opencode', model: 'plain-model', inputTokens: 1_000_000, outputTokens: 1_000_000, cachedTokens: 1_000_000 };
+            const measurements: TokenUsageMeasurement[] = [{ ...base, cost }, { ...base }];
+            if (reverse) {
+                measurements.reverse();
+            }
+            const original = measurements.map((measurement) => ({ ...measurement }));
+            const report = createTokenUsageReport('daily', measurements, undefined, {
+                'plain-model': { input: 1, cached: 2, output: 3 }
+            });
+
+            expect(report.entries).toEqual([{
+                ...base, inputTokens: 2_000_000, outputTokens: 2_000_000,
+                cachedTokens: 2_000_000, totalTokens: 6_000_000, cost: cost + 6
+            }]);
+            expect(report.total.cost).toBe(cost + 6);
+            expect(measurements).toEqual(original);
+        }
+    );
+
+    test.each(['mistral-large-3-0-3', 'mistral-medium-3-0'])('retains generic Mistral fallback pricing and raw model %s', (model) => {
+        const report = createTokenUsageReport('daily', [
+            { date: '2026-10-26', agent: 'vibe', model, inputTokens: 1_000_000, outputTokens: 1_000_000, cachedTokens: 1_000_000 }
+        ], undefined, {
+            'mistral-large-3': { input: 1, cached: 2, output: 3 },
+            'mistral-medium-3': { input: 1, cached: 2, output: 3 }
+        });
+
+        expect(report.entries[0].model).toBe(model);
+        expect(report.total.cost).toBe(6);
+    });
 
     test.each([0, 1.5])('preserves explicit measurement cost %s instead of Mistral fallback pricing', (cost) => {
         const report = createTokenUsageReport('daily', [
@@ -742,6 +795,203 @@ describe('opencode token usage adapter', () => {
 });
 
 describe('vibe token usage adapter', () => {
+    test.each([0, 1.5])('combines recorded legacy cost %s with estimated unified cost after Vibe alias normalization', async (cost) => {
+        await withTempDirectory(async (root) => {
+            await createVibeSession(root, 'legacy', {
+                start_time: new Date(2026, 5, 2, 12).toISOString(),
+                config: { active_model: 'mistral-large-4-0' },
+                stats: {
+                    session_prompt_tokens: 2_000_000, session_cached_tokens: 1_000_000,
+                    session_completion_tokens: 1_000_000, session_cost: cost
+                }
+            });
+            await createUnifiedVibeSession(root, 'session-a', 'mistral-large-4-0-3', unifiedVibeSession(3_000_000, 1_000_000, 1_000_000));
+            const measurements = await new VibeTokenUsageAdapter(root).loadTokenUsage();
+            const base = {
+                date: '2026-06-02', agent: 'vibe', model: 'mistral-large-4',
+                inputTokens: 1_000_000, cachedTokens: 1_000_000, outputTokens: 1_000_000
+            };
+            expect(measurements).toEqual([{ ...base, cost }, base]);
+
+            const report = createTokenUsageReport('daily', measurements, undefined, {
+                'mistral-large-4': { input: 1, cached: 2, output: 3 }
+            });
+
+            expect(report.entries).toEqual([{
+                ...base, inputTokens: 2_000_000, cachedTokens: 2_000_000, outputTokens: 2_000_000,
+                totalTokens: 6_000_000, cost: cost + 6
+            }]);
+            expect(report.total.cost).toBe(cost + 6);
+        });
+    });
+
+    test.each(['mistral-large-4', 'mistral-large-4-0', 'mistral-large-4-0-3', 'mistral-large-4-0-8', 'mistral-large-4.1', 'mistral-large-4.1.2', { id: ' mistral-large-4-0-3 ' }])(
+        'normalizes unified runtime model %j before reporting usage', async (model) => {
+            await withTempDirectory(async (root) => {
+                const directory = await createUnifiedVibeSession(root, 'session-a', model, {}, { store_format_minor: 10 });
+                await fs.writeFile(path.join(directory, 'meta.json'), JSON.stringify({
+                    session_id: 'session-a', config: { active_model: 'conflicting-sidecar-model' }
+                }));
+
+                expect(await new VibeTokenUsageAdapter(root).loadTokenUsage()).toEqual([{
+                    date: '2026-06-02', agent: 'vibe', model: 'mistral-large-4',
+                    inputTokens: 60, cachedTokens: 40, outputTokens: 20
+                }]);
+            });
+        }
+    );
+
+    test.each([
+        { name: 'config string', metadata: { config: { active_model: ' mistral-large-4.1 ' }, model: 'ignored-root-model' } },
+        { name: 'root object ID', metadata: { active_model: { id: ' mistral-large-4-0-8 ' }, config: { active_model: ' ' } } },
+        { name: 'stats string', metadata: { stats: { model_name: 'mistral-large-4-0-3' } } }
+    ])('normalizes legacy $name and preserves recorded costs', async ({ metadata }) => {
+        await withTempDirectory(async (root) => {
+            for (const cost of [0, 1.5]) {
+                await createVibeSession(root, `session-${cost}`, {
+                    ...metadata,
+                    start_time: new Date(2026, 5, 2, 12).toISOString(),
+                    stats: {
+                        ...metadata.stats, session_prompt_tokens: 100, session_cached_tokens: 40,
+                        session_completion_tokens: 20, session_cost: cost
+                    }
+                });
+            }
+
+            expect(await new VibeTokenUsageAdapter(root).loadTokenUsage()).toEqual([0, 1.5].map((cost) => ({
+                date: '2026-06-02', agent: 'vibe', model: 'mistral-large-4',
+                inputTokens: 60, cachedTokens: 40, outputTokens: 20, cost
+            })));
+        });
+    });
+
+    test.each(['unknown', 'glm-5-3', 'mistral-large-3-0', 'mistral-medium-4-0', 'mistral-large-40', 'mistral-large-41', 'mistral-large-4-latest', 'mistral-large-4-0-3:free', 'mistral/mistral-large-4-0', 'mistral-large-4@eu', 'mistral-large-4.', 'mistral-large-4--1', 'mistral-large-4.1beta', 'MISTRAL-LARGE-4-0'])(
+        'leaves unrelated or nonnumeric Vibe model %s unchanged', async (model) => {
+            await withTempDirectory(async (root) => {
+                await createUnifiedVibeSession(root, 'session-a', model);
+
+                expect(await new VibeTokenUsageAdapter(root).loadTokenUsage()).toEqual([{
+                    date: '2026-06-02', agent: 'vibe', model,
+                    inputTokens: 60, cachedTokens: 40, outputTokens: 20
+                }]);
+            });
+        }
+    );
+
+    test('normalizes a unified sidecar object model ID before the conflicting model_name', async () => {
+        await withTempDirectory(async (root) => {
+            const directory = await createUnifiedVibeSession(root, 'session-a', null, {}, { store_format_minor: 10 });
+            await fs.writeFile(path.join(directory, 'meta.json'), JSON.stringify({
+                session_id: 'session-a', config: { active_model: { id: ' mistral-large-4.1 ' }, model_name: 'ignored-model' }
+            }));
+
+            expect(await new VibeTokenUsageAdapter(root).loadTokenUsage()).toEqual([{
+                date: '2026-06-02', agent: 'vibe', model: 'mistral-large-4',
+                inputTokens: 60, cachedTokens: 40, outputTokens: 20
+            }]);
+        });
+    });
+
+    test('falls back to the unified sidecar model alias for null runtime metadata without importing sidecar usage', async () => {
+        await withTempDirectory(async (root) => {
+            const directory = await createUnifiedVibeSession(root, 'session-a', null, {
+                ...unifiedVibeSession(172_312, 128_000, 2_466),
+                createdAt: new Date(2026, 10, 9, 12).getTime()
+            }, { store_format_minor: 10 });
+            await fs.writeFile(path.join(directory, 'meta.json'), JSON.stringify({
+                session_id: 'session-a',
+                config: { active_model: 'mistral-large-4-0-3', model_name: 'mistral-large-4-0' },
+                start_time: new Date(2026, 10, 8, 12).toISOString(),
+                stats: { session_prompt_tokens: 999, session_completion_tokens: 999, session_cost: 999 }
+            }));
+            const range = { start: new Date(2026, 10, 9), endExclusive: new Date(2026, 10, 10) };
+            const adapter = new VibeTokenUsageAdapter(root);
+            const measurements = await adapter.loadTokenUsage(range);
+
+            expect(measurements).toEqual([{
+                date: '2026-11-09', agent: 'vibe', model: 'mistral-large-4',
+                inputTokens: 41_846, cachedTokens: 128_000, outputTokens: 2_466
+            }]);
+            const report = createTokenUsageReport('daily', measurements, range, await new TokenPriceConfigAdapter().loadTokenPrices());
+            expect(report.entries).toEqual([{
+                date: '2026-11-09', agent: 'vibe', model: 'mistral-large-4',
+                inputTokens: 41_846, cachedTokens: 128_000, outputTokens: 2_466,
+                totalTokens: 172_312, cost: 0.0434308
+            }]);
+            expect(await adapter.loadTokenUsage({ start: new Date(2026, 10, 8), endExclusive: new Date(2026, 10, 9) })).toEqual([]);
+        });
+    });
+
+    test.each([undefined, null, ' '])('uses unified sidecar model_name when active_model is %s', async (activeModel) => {
+        await withTempDirectory(async (root) => {
+            const directory = await createUnifiedVibeSession(root, 'session-a', null, {}, { store_format_minor: 10 });
+            await fs.writeFile(path.join(directory, 'meta.json'), JSON.stringify({
+                session_id: 'session-a', config: { active_model: activeModel, model_name: 'mistral-large-4-0' }
+            }));
+
+            expect(await new VibeTokenUsageAdapter(root).loadTokenUsage()).toEqual([{
+                date: '2026-06-02', agent: 'vibe', model: 'mistral-large-4',
+                inputTokens: 60, cachedTokens: 40, outputTokens: 20
+            }]);
+        });
+    });
+
+    test('keeps a known runtime model instead of a conflicting unified sidecar model', async () => {
+        await withTempDirectory(async (root) => {
+            const directory = await createUnifiedVibeSession(root, 'session-a', 'glm-5-3', {}, { store_format_minor: 10 });
+            await fs.writeFile(path.join(directory, 'meta.json'), JSON.stringify({
+                session_id: 'session-a', config: { active_model: 'mistral-large-4-0-3' }
+            }));
+
+            expect(await new VibeTokenUsageAdapter(root).loadTokenUsage()).toEqual([{
+                date: '2026-06-02', agent: 'vibe', model: 'glm-5-3',
+                inputTokens: 60, cachedTokens: 40, outputTokens: 20
+            }]);
+        });
+    });
+
+    test.each([
+        { name: 'malformed JSON', raw: '{' },
+        { name: 'null sidecar', raw: 'null' },
+        { name: 'array sidecar', raw: '[]' },
+        { name: 'primitive sidecar', raw: '"model"' },
+        { name: 'missing config', raw: '{}' },
+        { name: 'null config', raw: '{"config":null}' },
+        { name: 'array config', raw: '{"config":[]}' },
+        { name: 'primitive config', raw: '{"config":"model"}' },
+        { name: 'mismatched identity', raw: JSON.stringify({ session_id: 'another-session', config: { active_model: 'wrong-model' } }) }
+    ])('preserves unknown unified usage for an unusable sidecar: $name', async ({ raw }) => {
+        await withTempDirectory(async (root) => {
+            const directory = await createUnifiedVibeSession(root, 'session-a', null, {}, { store_format_minor: 10 });
+            await fs.writeFile(path.join(directory, 'meta.json'), raw);
+
+            expect(await new VibeTokenUsageAdapter(root).loadTokenUsage()).toEqual([{
+                date: '2026-06-02', agent: 'vibe', model: 'unknown',
+                inputTokens: 60, cachedTokens: 40, outputTokens: 20
+            }]);
+        });
+    });
+
+    test('rejects a symlinked unified sidecar rather than reading outside the store', async () => {
+        await withTempDirectory(async (root) => {
+            const directory = await createUnifiedVibeSession(root, 'session-a', null, {}, { store_format_minor: 10 });
+            const outside = path.join(root, 'outside.json');
+            await fs.writeFile(outside, JSON.stringify({ config: { active_model: 'outside-model' } }));
+            await fs.symlink(outside, path.join(directory, 'meta.json'));
+
+            await expect(new VibeTokenUsageAdapter(root).loadTokenUsage()).rejects.toThrow('linked unified store file');
+        });
+    });
+
+    test('surfaces unified sidecar I/O errors instead of treating them as missing metadata', async () => {
+        await withTempDirectory(async (root) => {
+            const directory = await createUnifiedVibeSession(root, 'session-a', null, {}, { store_format_minor: 10 });
+            await fs.mkdir(path.join(directory, 'meta.json'));
+
+            await expect(new VibeTokenUsageAdapter(root).loadTokenUsage()).rejects.toThrow(/Failed to read vibe usage sessions.*EISDIR/);
+        });
+    });
+
     test.each([8, 9, 10].flatMap((minor) => ['projection_advanced', 'projection_delta'].map((type) => ({ minor, type }))))(
         'loads only the selected unified generation and cumulative $type replacements at minor $minor', async ({ minor, type }) => {
             await withTempDirectory(async (root) => {
@@ -776,16 +1026,19 @@ describe('vibe token usage adapter', () => {
     test.each([9, 10])('replays interleaved relocations and projections with the latest model and cumulative usage at minor %s', async (minor) => {
         await withTempDirectory(async (root) => {
             const directory = await createUnifiedVibeSession(root, 'session-a', 'old-model', { tokenUsage: null }, { store_format_minor: minor });
+            await fs.writeFile(path.join(directory, 'meta.json'), JSON.stringify({
+                session_id: 'session-a', config: { active_model: 'conflicting-sidecar-model' }
+            }));
             const records = [
                 { type: 'projection_delta', payload: { watermark: 1, delta: [{ op: 'set_envelope', state: { session: unifiedVibeSession(1_000, 100, 20) } }] } },
                 { type: 'session_relocated', payload: { metadata: { active_model: 'intermediate-model' }, plugin_lock: {}, watermark: 2, delta: [{ op: 'set_envelope', state: { session: unifiedVibeSession(2_000, 200, 40) } }] } },
                 { type: 'projection_advanced', payload: { watermark: 3, snapshot: { session: unifiedVibeSession(3_000, 300, 60) } } },
-                { type: 'session_relocated', payload: { metadata: { active_model: 'latest-model' }, plugin_lock: {}, watermark: 4, delta: [{ op: 'set_envelope', state: { session: unifiedVibeSession(178_162, 139_104, 9_620) } }] } }
+                { type: 'session_relocated', payload: { metadata: { active_model: { id: 'mistral-large-4.1' } }, plugin_lock: {}, watermark: 4, delta: [{ op: 'set_envelope', state: { session: unifiedVibeSession(178_162, 139_104, 9_620) } }] } }
             ].map((record, index) => JSON.stringify({ recovery_journal_record_version: 1, sequence: 11 + index, ...record }));
             await fs.writeFile(path.join(directory, 'journal', '0000000000000011.jsonl'), records.join('\n') + '\n');
 
             expect(await new VibeTokenUsageAdapter(root).loadTokenUsage()).toEqual([{
-                date: '2026-06-02', agent: 'vibe', model: 'latest-model',
+                date: '2026-06-02', agent: 'vibe', model: 'mistral-large-4',
                 inputTokens: 29_438, cachedTokens: 139_104, outputTokens: 9_620
             }]);
         });
@@ -1198,10 +1451,41 @@ describe('coding agent token usage adapter', () => {
 });
 
 describe('token usage cli', () => {
-    test('prints raw token usage as json', async () => {
+    test('combines Vibe adapter Large 4 aliases in raw JSON using canonical prices', async () => {
+        await withTempDirectory(async (root) => {
+            for (const [index, model] of ['mistral-large-4-0', 'mistral-large-4-0-3'].entries()) {
+                const id = `session-${index}`;
+                await createUnifiedVibeSession(root, id, model, {
+                    id, createdAt: new Date(2026, 9, 26, 12).getTime(),
+                    tokenUsage: { inputTokens: 1_000_000, outputTokens: 0, totalTokens: 1_000_000, cachedInputTokens: 0 }
+                });
+            }
+            const output: string[] = [];
+            const program = createTokenUsageCli({
+                now: () => new Date(2026, 9, 26, 12),
+                writeLine: (line) => output.push(line),
+                loadTokenUsageOutPort: new VibeTokenUsageAdapter(root),
+                loadTokenPricesOutPort: new FakeTokenPricesLoader({
+                    'mistral-large-4': { input: 1, cached: 0, output: 0 },
+                    'mistral-large-4-0': { input: 2, cached: 0, output: 0 }
+                })
+            });
+
+            await program.parseAsync(['today', '--raw'], { from: 'user' });
+
+            const report = JSON.parse(output[0]) as TokenUsageReport;
+            expect(report.entries).toEqual([{
+                date: '2026-10-26', agent: 'vibe', model: 'mistral-large-4',
+                inputTokens: 2_000_000, outputTokens: 0, cachedTokens: 0, totalTokens: 2_000_000, cost: 2
+            }]);
+            expect(report.total.cost).toBe(2);
+        });
+    });
+
+    test.each(['gpt-5.5', 'mistral-large-4-0'])('prints raw non-Vibe token usage as json without changing model %s', async (model) => {
         const output: string[] = [];
         const loader = new FakeTokenUsageLoader([
-            { date: '2026-05-26', agent: 'opencode', model: 'gpt-5.5', inputTokens: 10, outputTokens: 2, cachedTokens: 3 }
+            { date: '2026-05-26', agent: 'opencode', model, inputTokens: 10, outputTokens: 2, cachedTokens: 3 }
         ]);
         const program = createTokenUsageCli({
             now: () => new Date(2026, 4, 26, 12, 0, 0, 0),
@@ -1217,7 +1501,7 @@ describe('token usage cli', () => {
         expect(report.startDate).toBe('2026-05-26');
         expect(report.endDate).toBe('2026-05-26');
         expect(report.entries).toEqual([
-            { date: '2026-05-26', agent: 'opencode', model: 'gpt-5.5', inputTokens: 10, outputTokens: 2, cachedTokens: 3, totalTokens: 15, cost: 0 }
+            { date: '2026-05-26', agent: 'opencode', model, inputTokens: 10, outputTokens: 2, cachedTokens: 3, totalTokens: 15, cost: 0 }
         ]);
     });
 });
@@ -1351,7 +1635,7 @@ function unifiedVibeSession(totalTokens = 120, cachedInputTokens = 40, outputTok
     };
 }
 
-async function createUnifiedVibeSession(root: string, id: string, model = 'mistral-medium-3.5', sessionOverrides = {}, currentOverrides: { store_format_minor?: unknown } = {}): Promise<string> {
+async function createUnifiedVibeSession(root: string, id: string, model: string | { id: string } | null = 'mistral-medium-3.5', sessionOverrides = {}, currentOverrides: { store_format_minor?: unknown } = {}): Promise<string> {
     const { createHash } = await import('node:crypto');
     const directory = path.join(root, 'unified', id);
     const generation = '0000000000000001';
@@ -1368,7 +1652,7 @@ async function createUnifiedVibeSession(root: string, id: string, model = 'mistr
         snapshot: { session: { ...unifiedVibeSession(), ...sessionOverrides } }
     });
     const runtime = await writeDocument('runtime.json', {
-        runtime_state_version: 3, session_id: id, snapshot_sequence: 10, session_metadata: model ? { active_model: model } : {}
+        runtime_state_version: 3, session_id: id, snapshot_sequence: 10, session_metadata: model === '' ? {} : { active_model: model }
     });
     const manifest = await writeDocument('manifest.json', {
         manifest_version: 1, session_id: id, generation, snapshot_sequence: 10,
