@@ -77,7 +77,8 @@ export function createTokenUsageReport(
     for (const measurement of measurements) {
         const groupedMeasurement = {
             ...measurement,
-            date: createGroupKey(period, measurement.date)
+            date: createGroupKey(period, measurement.date),
+            cost: measurement.cost ?? calculateCost(measurement, resolveTokenPrice(measurement.model, tokenPrices))
         };
         const key = [groupedMeasurement.date, groupedMeasurement.agent, groupedMeasurement.model].join('\u0000');
         const existing = entriesByKey.get(key);
@@ -90,9 +91,7 @@ export function createTokenUsageReport(
         existing.inputTokens += groupedMeasurement.inputTokens;
         existing.outputTokens += groupedMeasurement.outputTokens;
         existing.cachedTokens += groupedMeasurement.cachedTokens;
-        if (groupedMeasurement.cost !== undefined) {
-            existing.cost = (existing.cost ?? 0) + groupedMeasurement.cost;
-        }
+        existing.cost = (existing.cost ?? 0) + groupedMeasurement.cost;
     }
 
     const entries = Array.from(entriesByKey.values())

@@ -143,9 +143,13 @@ export class VibeTokenUsageAdapter implements LoadTokenUsageOutPort {
             if (input + outputTokens === 0) {
                 return [];
             }
+            const runtimeModel = readModel(sessionMetadata);
+            const model = runtimeModel === UNKNOWN_VIBE_MODEL
+                ? await readUnifiedSidecarModel(sessionPath, id)
+                : runtimeModel;
             return [{
                 date: toDateKey(startedAt), agent: VIBE_AGENT,
-                model: readModel(sessionMetadata),
+                model,
                 inputTokens: input - cachedTokens, outputTokens, cachedTokens
             }];
         } catch (err: unknown) {
@@ -239,6 +243,32 @@ async function readStoreFile(root: string, relativePath: string): Promise<string
     return fs.readFile(target, 'utf8');
 }
 
+async function readUnifiedSidecarModel(sessionPath: string, id: string): Promise<string> {
+    let raw: string;
+    try {
+        raw = await readStoreFile(sessionPath, 'meta.json');
+    } catch (err: unknown) {
+        if (isNodeError(err) && err.code === 'ENOENT') {
+            return UNKNOWN_VIBE_MODEL;
+        }
+        throw err;
+    }
+
+    let meta: unknown;
+    try {
+        meta = JSON.parse(raw);
+    } catch (err: unknown) {
+        if (err instanceof SyntaxError) {
+            return UNKNOWN_VIBE_MODEL;
+        }
+        throw err;
+    }
+    if (!isJsonObject(meta) || (meta.session_id !== undefined && meta.session_id !== id) || !isJsonObject(meta.config)) {
+        return UNKNOWN_VIBE_MODEL;
+    }
+    return readModel(meta.config);
+}
+
 async function readStoreDocument(root: string, relativePath: string, digest: unknown): Promise<JsonObject> {
     const document = await readStoreFile(root, relativePath);
     // Stored digests cover the JSON body, excluding the writer's terminating newline.
@@ -271,16 +301,20 @@ function readModel(...sources: JsonObject[]): string {
             const value = source[key];
 
             if (typeof value === 'string' && value.trim().length > 0) {
-                return value.trim();
+                return normalizeModel(value.trim());
             }
 
             if (isJsonObject(value) && typeof value.id === 'string' && value.id.trim().length > 0) {
-                return value.id.trim();
+                return normalizeModel(value.id.trim());
             }
         }
     }
 
     return UNKNOWN_VIBE_MODEL;
+}
+
+function normalizeModel(model: string): string {
+    return /^mistral-large-4(?:[.-]\d+)*$/.test(model) ? 'mistral-large-4' : model;
 }
 
 function parseDate(value: unknown): Date | undefined {
