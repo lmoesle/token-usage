@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import ts from 'typescript';
 import preRefreshTokenPriceIds from './fixtures/preRefreshTokenPriceIds.json';
+import opencodeLegacyModelPrices from './fixtures/opencodeLegacyModelPrices.json';
 import opencodeModelPrices from './fixtures/opencodeModelPrices.json';
 import { createTokenUsageCli, TokenUsageUseCase } from '../src/index';
 import { LoadTokenPricesOutPort, LoadTokenUsageOutPort, ShowTokenUsageOutPort } from '../src/application/ports/out/tokenUsageOutPort';
@@ -14,7 +15,7 @@ import { CodingAgentTokenUsageAdapter, CodingAgentUsageHandler } from '../src/ad
 import { VibeTokenUsageAdapter } from '../src/adapter/out/vibeTokenUsageAdapter';
 import { CodexTokenUsageAdapter } from '../src/adapter/out/codexTokenUsageAdapter';
 import { JunieTokenUsageAdapter } from '../src/adapter/out/junieTokenUsageAdapter';
-import { historicalTokenPrices, pinnedTokenPriceProviders, preRefreshTokenPriceProviders, previousTokenPriceProviders, previousTokenPrices, priceCandidates, refreshedTokenPrices, selectPriceCandidate, sourceModels, unpricedModelIds } from './fixtures/refreshedTokenPrices';
+import { collectPriceCandidates, historicalTokenPrices, november3TokenPriceAdditions, pinnedTokenPriceProviders, preRefreshTokenPriceProviders, previousTokenPriceProviders, previousTokenPrices, priceCandidates, refreshedTokenPrices, selectPriceCandidate, sourceModels, unpricedModelIds } from './fixtures/refreshedTokenPrices';
 
 describe('token usage domain', () => {
     test('creates a local time range for today only', () => {
@@ -249,6 +250,16 @@ describe('token usage use case', () => {
 });
 
 describe('token price config adapter', () => {
+    function publishedLocalCost({ provider, id, modelID }: { provider: string; id: string; modelID: string }) {
+        const published = sourceModels.find((model) => model.provider === provider && model.id === modelID);
+        if (id === modelID) return published?.cost;
+
+        const mode = id.slice(modelID.length + 1);
+        expect(id.startsWith(`${modelID}-`)).toBe(true);
+        expect(Object.hasOwn(published?.modes ?? {}, mode)).toBe(true);
+        return { ...published?.cost, ...published?.modes?.[mode] };
+    }
+
     test('loads configured model token prices', async () => {
         const prices = await new TokenPriceConfigAdapter().loadTokenPrices();
 
@@ -289,9 +300,9 @@ describe('token price config adapter', () => {
         ['deepseek-v4-pro', 1.74, 0.145, 3.48],
         ['deepseek-v4.1-flash', 0.3, 0.006, 1.2],
         ['gemini-3.5-flash-lite', 0.3, 0.03, 2.5],
-        ['gemini-3.6-flash', 1.5, 0.15, 7.5],
-        ['gemini-3.7-flash', 1.5, 0.15, 7.5],
-        ['gemini-3.8-flash', 1.5, 0.15, 7.5],
+        ['gemini-3.6-flash', 0.75, 0.075, 3.75],
+        ['gemini-3.7-flash', 0.75, 0.075, 3.75],
+        ['gemini-3.8-flash', 0.75, 0.075, 3.75],
         ['glm-5.2', 1.4, 0.26, 4.4],
         ['glm-5.3', 1.4, 0.26, 4.4],
         ['glm-5.3-flash', 0.15, 0.03, 0.5],
@@ -326,18 +337,33 @@ describe('token price config adapter', () => {
     test('covers every published priced model and mode across the complete public catalog', async () => {
         const prices = await new TokenPriceConfigAdapter().loadTokenPrices();
 
-        expect(new Set(sourceModels.map((model) => model.provider)).size).toBe(235);
-        expect(sourceModels).toHaveLength(8933);
-        expect(refreshedTokenPrices).toHaveLength(3906);
-        expect(historicalTokenPrices).toHaveLength(126);
-        expect(unpricedModelIds).toHaveLength(267);
+        expect(new Set(sourceModels.map((model) => model.provider)).size).toBe(324);
+        expect(sourceModels).toHaveLength(9981);
+        expect(priceCandidates.size).toBe(4194);
+        expect(refreshedTokenPrices).toHaveLength(4150);
+        expect(historicalTokenPrices).toHaveLength(310);
+        expect(unpricedModelIds).toHaveLength(280);
         expect(Object.keys(previousTokenPriceProviders)).toEqual(previousTokenPrices.map(([id]) => id));
-        expect(Object.keys(prices)).toEqual(expect.arrayContaining([
-            ...refreshedTokenPrices.map(([id]) => id),
-            ...preRefreshTokenPriceIds
-        ]));
+        const priorIds = [...preRefreshTokenPriceIds, ...november3TokenPriceAdditions.map(([id]) => id)];
         expect(preRefreshTokenPriceIds).toHaveLength(3957);
-        expect(Object.keys(prices)).toHaveLength(4032);
+        expect(november3TokenPriceAdditions).toHaveLength(75);
+        expect(new Set(priorIds).size).toBe(4032);
+        expect(priorIds.filter((id) => !Object.hasOwn(prices, id))).toEqual([]);
+        const priorSet = new Set(priorIds);
+        expect(Object.keys(prices).filter((id) => !priorSet.has(id))).toHaveLength(428);
+        expect(Object.keys(prices)).toHaveLength(4460);
+        const uncovered: string[] = [];
+        for (const { id, cost, modes } of sourceModels) {
+            for (const [runtimeId, rates] of [
+                [id, cost] as const,
+                ...Object.entries(modes ?? {}).map(([mode, override]) => [`${id}-${mode}`, { ...cost, ...override }] as const)
+            ]) {
+                if (rates.input !== undefined && rates.output !== undefined && !Object.hasOwn(prices, runtimeId)) {
+                    uncovered.push(runtimeId);
+                }
+            }
+        }
+        expect(uncovered).toEqual([]);
         expect(Object.keys(prices)).toEqual([
             ...refreshedTokenPrices.map(([id]) => id),
             ...historicalTokenPrices.map(([id]) => id)
@@ -354,6 +380,35 @@ describe('token price config adapter', () => {
         expect(selectPriceCandidate([reseller, zen], 'opencode')).toEqual(zen);
         expect(selectPriceCandidate([reseller], 'opencode')).toBeUndefined();
         expect(selectPriceCandidate([reseller, zen])).toEqual(zen);
+    });
+
+    test.each([9, 2])('prefers the explicit ID over a same-provider mode charging %d in either source order', (modeInput) => {
+        const base = {
+            provider: 'openai', id: 'example', cost: { input: 1, cache_read: 0.1, output: 2 },
+            modes: { fast: { input: modeInput, cache_read: 0.2, output: 4 } }
+        };
+        const explicit = { provider: 'openai', id: 'example-fast', cost: { input: 2, cache_read: 0.2, output: 4 } };
+        const reseller = { ...base, provider: 'opencode', modes: { fast: { input: 8, output: 16 } } };
+        for (const models of [[base, explicit, reseller], [reseller, explicit, base]]) {
+            const { candidatesById } = collectPriceCandidates(models);
+            const candidates = candidatesById.get(explicit.id) ?? [];
+
+            expect(candidates.filter(({ provider }) => provider === 'openai')).toEqual([
+                { provider: 'openai', direct: true, rates: [2, 0.2, 4] }
+            ]);
+            expect(selectPriceCandidate(candidates, 'openai')?.rates).toEqual([2, 0.2, 4]);
+            expect(selectPriceCandidate(candidates)?.rates).toEqual([8, 0.1, 16]);
+        }
+    });
+
+    test('does not price an unpriced explicit model with the same-provider mode rate', () => {
+        const { candidatesById, sourceIds } = collectPriceCandidates([
+            { provider: 'vendor', id: 'example', cost: { input: 1, output: 2 }, modes: { fast: null } },
+            { provider: 'vendor', id: 'example-fast', cost: {} }
+        ]);
+
+        expect(sourceIds.has('example-fast')).toBe(true);
+        expect(candidatesById.has('example-fast')).toBe(false);
     });
 
     test('recognizes Amazon Bedrock as the direct provider for the amazon publisher namespace', () => {
@@ -411,58 +466,99 @@ describe('token price config adapter', () => {
         ['pulse-alpha-free', 0, 0, 0],
         ['mistral-large-4-0-8', 0.7, 0.07, 2.1],
         ['mistralai/mistral-large-4-0', 0.7, 0.07, 2.1],
-        ['mistral/mistral-large-4@eu', 0.748, 0.077, 2.299],
-        ['deepseek-v4-pro-fast', 1.91, 0.16, 3.83]
+        ['mistral/mistral-large-4@eu', 0.748, 0.077, 2.299]
     ])('loads November 3 additions and changed prices for %s', async (model, input, cached, output) => {
         const prices = await new TokenPriceConfigAdapter().loadTokenPrices();
 
         expect(prices[model]).toEqual({ input, cached, output });
     });
 
+    test.each([
+        ['claude-sonnet-5-5', 2, 0.1, 10],
+        ['mistral-large-latest', 0.7, 0.07, 2.1],
+        ['gpt-6.2-astra', 8, 0.4, 40],
+        ['gpt-6.2-astra-fast', 16, 0.8, 80],
+        ['gpt-6.2-astra-ultrafast', 8, 0.4, 40],
+        ['gpt-6.2-astra-pro', 8, 0.4, 40],
+        ['gpt-6.2-sol', 2, 0.1, 10],
+        ['gpt-6.2-sol-fast', 4, 0.2, 20],
+        ['gpt-6.2-sol-ultrafast', 2, 0.1, 10],
+        ['gpt-6.2-sol-pro', 2, 0.1, 10],
+        ['superbot-fast', 1, 0.05, 5],
+        ['superbot-fast-fast', 2, 0.1, 10]
+    ])('loads November 18 catalog prices for %s', async (model, input, cached, output) => {
+        const prices = await new TokenPriceConfigAdapter().loadTokenPrices();
+
+        expect(prices[model]).toEqual({ input, cached, output });
+    });
+
+    test('cross-checks refreshed V1 models without importing OAuth or unpriced Mistral zeros', async () => {
+        const prices = await new TokenPriceConfigAdapter().loadTokenPrices();
+
+        expect(opencodeLegacyModelPrices.records).toBe(76);
+        expect(opencodeLegacyModelPrices.models).toHaveLength(opencodeLegacyModelPrices.records);
+        expect(new Set(opencodeLegacyModelPrices.models.map((model) => `${model.provider}/${model.id}`)).size).toBe(76);
+        expect(opencodeLegacyModelPrices.models.filter(({ provider }) => provider === 'openai')).toHaveLength(42);
+        expect(opencodeLegacyModelPrices.models.filter(({ provider }) => provider === 'mistral')).toHaveLength(23);
+        expect(opencodeLegacyModelPrices.models.filter(({ provider }) => provider === 'opencode')).toHaveLength(11);
+        const unpriced: string[] = [];
+        for (const model of opencodeLegacyModelPrices.models) {
+            const published = publishedLocalCost(model);
+            if (model.provider === 'openai' || published?.input === undefined || published.output === undefined) {
+                expect(model.cost).toEqual({ input: 0, cache_read: 0, output: 0 });
+            } else {
+                expect(model.cost).toEqual({ cache_read: 0, ...published });
+            }
+            if (published?.input === undefined || published.output === undefined) {
+                unpriced.push(model.id);
+                expect(Object.hasOwn(prices, model.id)).toBe(false);
+            } else {
+                expect(Object.hasOwn(prices, model.id)).toBe(true);
+            }
+        }
+        expect(unpriced.sort()).toEqual(['voxtral-mini-latest', 'voxtral-mini-tts-latest']);
+        expect(prices['gpt-6.2-astra']).toEqual({ input: 8, cached: 0.4, output: 40 });
+        expect(prices['beam-free']).toEqual({ input: 0, cached: 0, output: 0 });
+    });
+
     test('cross-checks explicit local V2 API rates without treating empty OAuth costs as free', async () => {
         const prices = await new TokenPriceConfigAdapter().loadTokenPrices();
 
-        expect(opencodeModelPrices.records).toBe(48);
+        expect(opencodeModelPrices.records).toBe(65);
         expect(opencodeModelPrices.models).toHaveLength(opencodeModelPrices.records);
         expect(new Set(opencodeModelPrices.models.map((model) => `${model.provider}/${model.id}`)).size).toBe(opencodeModelPrices.records);
+        expect(opencodeModelPrices.models.filter(({ provider }) => provider === 'openai')).toHaveLength(34);
+        expect(opencodeModelPrices.models.filter(({ provider }) => provider === 'mistral')).toHaveLength(20);
+        expect(opencodeModelPrices.models.filter(({ provider }) => provider === 'opencode')).toHaveLength(11);
         const variants = opencodeModelPrices.models.filter((model) => model.id !== model.modelID);
-        expect(variants).toHaveLength(10);
+        expect(variants).toHaveLength(22);
         expect(variants.map((model) => model.id)).toEqual(expect.arrayContaining([
             'gpt-6-astra-fast', 'gpt-6-astra-ultrafast',
-            'gpt-6.1-sol-fast', 'gpt-6.1-sol-ultrafast', 'gpt-6.1-terra-fast'
+            'gpt-6.1-sol-fast', 'gpt-6.1-sol-ultrafast', 'gpt-6.1-terra-fast',
+            'gpt-6.2-astra-fast', 'gpt-6.2-sol-fast'
         ]));
-        const unpricedApiIds = ['gpt-5.6-cyber'];
+        const unpricedApiIds: string[] = [];
         for (const model of opencodeModelPrices.models) {
-            const published = sourceModels.find((entry) => entry.provider === model.provider && entry.id === model.modelID);
-            const mode = model.id === model.modelID ? undefined : model.id.slice(model.modelID.length + 1);
-            if (mode) {
-                expect(model.id.startsWith(`${model.modelID}-`)).toBe(true);
-                expect(Object.hasOwn(published?.modes ?? {}, mode)).toBe(true);
-            }
-            const publishedCost = mode ? { ...published?.cost, ...published?.modes?.[mode] } : published?.cost;
-            const base = model.cost[0];
-            if (base) {
-                expect(publishedCost).toBeDefined();
-                expect({ cache_read: 0, ...publishedCost }).toEqual(base);
+            const published = publishedLocalCost(model);
+            if (model.provider === 'openai') {
+                expect(model.cost).toEqual([]);
             } else {
-                expect(model.provider).toBe('openai');
+                expect(published).toBeDefined();
+                expect(model.cost).toEqual([{ cache_read: 0, ...published }]);
             }
-            if (unpricedApiIds.includes(model.id)) {
-                expect(base).toBeUndefined();
-                expect(publishedCost?.input).toBeUndefined();
-                expect(prices[model.id]).toBeUndefined();
+            if (published?.input === undefined || published.output === undefined) {
+                unpricedApiIds.push(model.id);
+                expect(Object.hasOwn(prices, model.id)).toBe(false);
                 continue;
             }
-            expect(publishedCost?.input).toBeDefined();
-            expect(publishedCost?.output).toBeDefined();
             const selected = selectPriceCandidate(priceCandidates.get(model.id) ?? [], pinnedTokenPriceProviders[model.id]);
             expect(selected).toBeDefined();
             const [input, cached, output] = selected!.rates;
             expect(prices[model.id]).toEqual({ input, cached, output });
         }
+        expect(unpricedApiIds.sort()).toEqual(['gpt-5.6-cyber', 'gpt-6-cyber']);
         expect(prices['gpt-6.1-sol']).toEqual({ input: 2, cached: 0.1, output: 10 });
-        expect(prices['gpt-5.6-cyber']).toBeUndefined();
-        expect(prices['pulse-alpha-free']).toEqual({ input: 0, cached: 0, output: 0 });
+        expect(prices['gpt-6.2-sol-fast']).toEqual({ input: 4, cached: 0.2, output: 20 });
     });
 
     test('pins every traceable previous selection without inventing providers for the eight unknown historical IDs', () => {
@@ -479,6 +575,18 @@ describe('token price config adapter', () => {
             if (selected) expect(selected.provider).toBe(provider);
             else expect(historicalTokenPrices.some(([model]) => model === id)).toBe(true);
         }
+    });
+
+    test('updates and retains November 3 additions using their previously selected providers', async () => {
+        const prices = await new TokenPriceConfigAdapter().loadTokenPrices();
+
+        for (const [id, provider] of november3TokenPriceAdditions) {
+            expect(pinnedTokenPriceProviders[id]).toBe(provider);
+        }
+        expect(pinnedTokenPriceProviders['deepseek-v4-pro-fast']).toBe('wally');
+        expect(prices['deepseek-v4-pro-fast']).toEqual({ input: 1.68, cached: 0.14, output: 3.38 });
+        expect(pinnedTokenPriceProviders['cloudflare/deepseek-v4-flash']).toBe('llmgateway-providers');
+        expect(prices['cloudflare/deepseek-v4-flash']).toEqual({ input: 0.44, cached: 0.014, output: 1.32 });
     });
 
     test.each([
@@ -522,9 +630,9 @@ describe('token price config adapter', () => {
         ['gpt-5.4-pro', 30, 0, 180],
         ['gpt-5.5-pro', 30, 0, 180],
         ['gpt-5.6-terra', 2, 0.2, 12],
-        ['gemini-3.6-flash', 1.5, 0.15, 7.5],
-        ['gemini-3.7-flash', 1.5, 0.15, 7.5],
-        ['gemini-3.8-flash', 1.5, 0.15, 7.5],
+        ['gemini-3.6-flash', 0.75, 0.075, 3.75],
+        ['gemini-3.7-flash', 0.75, 0.075, 3.75],
+        ['gemini-3.8-flash', 0.75, 0.075, 3.75],
         ['glm-5', 1, 0.2, 3.2],
         ['minimax-m2.5', 0.3, 0.06, 1.2],
         ['muse-spark-1.2', 1.25, 0.15, 4.25],
@@ -588,6 +696,9 @@ describe('token price config adapter', () => {
         ['gpt-5.6-sol', 4, 0.4, 20],
         ['gpt-6.1-sol-fast', 4, 0.2, 20],
         ['gpt-6.1-sol-pro', 2, 0.1, 10],
+        ['gpt-6.2-astra-fast', 16, 0.8, 80],
+        ['gpt-6.2-sol', 2, 0.1, 10],
+        ['gemini-3.8-flash', 0.75, 0.075, 3.75],
         ['gpt-6-astra-ultrafast', 60, 6, 300],
         ['gpt-5-flex', 0.625, 0.0625, 5],
         ['mistral-large-4', 0.7, 0.07, 2.1],
@@ -615,18 +726,18 @@ describe('token price config adapter', () => {
         }
     });
 
-    test('uses mode prices rather than collapsing premium and inherited modes to their base ID', async () => {
+    test.each(['gpt-6.1-sol', 'gpt-6.2-sol'])('uses premium and inherited mode prices for %s', async (base) => {
         const prices = await new TokenPriceConfigAdapter().loadTokenPrices();
-        const measurements = ['gpt-6.1-sol', 'gpt-6.1-sol-fast', 'gpt-6.1-sol-pro'].map((model) => ({
+        const measurements = [base, `${base}-fast`, `${base}-pro`].map((model) => ({
             date: '2026-10-07', agent: 'opencode', model, inputTokens: 1_000_000, cachedTokens: 1_000_000, outputTokens: 1_000_000
         }));
 
         const report = createTokenUsageReport('daily', measurements, undefined, prices);
 
         expect(report.entries.map((entry) => ({ model: entry.model, cost: entry.cost }))).toEqual([
-            { model: 'gpt-6.1-sol', cost: 12.1 },
-            { model: 'gpt-6.1-sol-fast', cost: 24.2 },
-            { model: 'gpt-6.1-sol-pro', cost: 12.1 }
+            { model: base, cost: 12.1 },
+            { model: `${base}-fast`, cost: 24.2 },
+            { model: `${base}-pro`, cost: 12.1 }
         ]);
         expect(report.total.cost).toBeCloseTo(48.4);
     });
